@@ -1,0 +1,133 @@
+services:
+  # Whisper Web Transcription Server with cpu support
+  server-cpu:
+    build:
+      context: .
+      dockerfile: docker/DOCKERFILE.server.cpu
+    container_name: server-cpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./.models:/server/.models # Local models directory for inference
+    env_file:
+      - .env
+    environment:
+      - SERVER_TYPE=cpu  # Specify server type
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/sessions"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      mynet: {}
+    profiles:
+      - cpu  # Only start when explicitly requested
+
+  # Whisper Web Transcription Server with cuda support
+  server-cuda:
+    build:
+      context: .
+      dockerfile: docker/DOCKERFILE.server.cuda
+    container_name: server-cuda
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./.models:/server/.models # Local models directory for inference
+    env_file:
+      - .env
+    environment:
+      - SERVER_TYPE=cuda  # Specify server type
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all  # Use all available GPUs
+              capabilities: [gpu]
+            - capabilities: [gpu]  # Ensure GPU is available
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/sessions"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      mynet: {}
+    profiles:
+      - cuda  # Only start when explicitly requested
+
+  # Streamlit Upload App
+  streamlit-upload:
+    build:
+      context: .
+      dockerfile: docker/DOCKERFILE.streamlit_upload
+    container_name: streamlit-upload-${STREAMLIT_UPLOAD_PORT:-8501}
+    ports:
+      - "${STREAMLIT_UPLOAD_PORT:-8501}:${STREAMLIT_UPLOAD_PORT:-8501}"
+    env_file:
+      - .env
+    environment:
+      - STREAMLIT_SERVER_PORT=${STREAMLIT_UPLOAD_PORT:-8501}
+      - SERVER_TYPE=${SERVER_TYPE:-cpu}  # Default to cpu if not set
+    depends_on:
+      server-cpu:
+        condition: service_healthy
+        required: false
+      server-cuda:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${STREAMLIT_UPLOAD_PORT:-8501}/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      mynet: {}
+    profiles:
+      - streamlit
+
+  # Streamlit Viewer App (Read-only viewer)
+  streamlit-viewer:
+    build:
+      context: .
+      dockerfile: docker/DOCKERFILE.streamlit_viewer
+    container_name: streamlit-viewer-${STREAMLIT_VIEWER_PORT:-8502}
+    ports:
+      - "${STREAMLIT_VIEWER_PORT:-8502}:${STREAMLIT_VIEWER_PORT:-8502}"
+    env_file:
+      - .env
+    environment:
+      - STREAMLIT_SERVER_PORT=${STREAMLIT_VIEWER_PORT:-8502}
+      - SERVER_TYPE=${SERVER_TYPE:-cpu}  # Default to cpu if not set
+    depends_on:
+      server-cpu:
+        condition: service_healthy
+        required: false
+      server-cuda:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${STREAMLIT_VIEWER_PORT:-8502}/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      mynet: {}
+    profiles:
+      - streamlit
+
+volumes:
+  whisper_models:
+    driver: local
+
+networks:
+  mynet:
+    name: ${DOCKER_NETWORK_NAME:-whisper-network}
+    driver: bridge

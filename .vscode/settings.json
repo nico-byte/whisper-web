@@ -1,0 +1,19 @@
+{
+    // Pyrefly configuration
+    "python.pyrefly.disableLanguageServices": true,
+
+    // Ruff configuration
+    "ruff.enable": true,
+    "ruff.lint.enable": true,
+    "ruff.organizeImports": true,
+    
+    // Set Ruff as the default formatter for Python
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit",
+            "source.fixAll": "explicit"
+        }
+    },
+}

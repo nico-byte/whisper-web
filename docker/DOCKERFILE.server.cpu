@@ -1,0 +1,59 @@
+# syntax = docker/dockerfile:latest
+FROM python:3.12-slim
+SHELL ["/bin/bash", "-c"]
+
+# The Dockerfile is expected to be run from the root of the project
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN --mount=type=cache,target=/var/cache/apt \
+    apt-get -y update && \
+    apt-get -y install --no-install-recommends \
+    git curl libgomp1 \
+    portaudio19-dev libasound2-dev libsndfile1-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create the specified user in the container
+ARG USER=server
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+RUN groupadd -g $GROUP_ID $USER
+RUN useradd -m $USER -u $USER_ID -g $GROUP_ID
+RUN mkdir -p /home/$USER/.cache/uv && chown -R $USER:$USER /home/$USER
+
+# Switch to user and set working directory
+USER $USER
+WORKDIR /home/$USER
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:0.5.10 /uv /bin/uv
+ENV UV_LINK_MODE=copy
+
+# Install dependencies using uv
+RUN --mount=type=cache,uid=${USER_ID},gid=${GROUP_ID},target=/home/${USER}/.cache/uv \
+    --mount=type=bind,source=./.python-version,target=.python-version \
+    --mount=type=bind,source=./uv.lock,target=uv.lock \
+    --mount=type=bind,source=./pyproject.toml,target=pyproject.toml \
+    uv sync --frozen --no-install-project --group server --extra cpu --python python3.12
+
+# Copy local source tree with correct ownership
+COPY --chown=$USER:$USER ./ .
+
+# Create directory for models (will be cached and mounted as volume)
+RUN mkdir -p /home/$USER/.models
+
+# Set environment variables
+ENV PATH="/home/$USER/.venv/bin:$PATH"
+ENV PYTHONPATH=/home/$USER
+ENV HF_HOME=/home/$USER/.models
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run server
+CMD uv run python -u -m app.server

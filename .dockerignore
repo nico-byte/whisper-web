@@ -1,0 +1,71 @@
+# Git and version control
+.git
+.gitignore
+.github/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation and media (if not needed in containers)
+docs/
+media/
+*.md
+!README.md
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+.tox/
+.cache
+
+# Environment and config files (be careful with these)
+.env.local
+.env.development
+.env.test
+# Note: Keep .env if containers need it
+
+# Docker
+.dockerignore
+docker-compose*.yml
+# Note: Don't ignore docker/ if it contains files needed for builds
+
+# Logs and temporary files
+*.log
+.DS_Store
+Thumbs.db
+
+# Node.js (if you have any frontend assets)
+node_modules/
+npm-debug.log*
+
+# Jupyter notebooks (if not needed)
+*.ipynb_checkpoints/
