@@ -17,3 +17,4 @@ media/
 .DS_Store
 .ruff_cache
 .mypy_cache
+docs/build/html

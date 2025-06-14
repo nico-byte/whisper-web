@@ -19,10 +19,6 @@ help:
 %: Makefile
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-gh-deploy:
-	@make html
-	@ghp-import _build/html -p -o -n
-
 clean:
 	@$(SPHINXBUILD) -M clean "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O);
-	cd _build; git worktree add -f html gh-pages
+	cd build; git worktree add -f html gh-pages
