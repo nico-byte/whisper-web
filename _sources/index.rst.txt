@@ -1,5 +1,5 @@
-.. whisper-rt documentation master file, created by
-   sphinx-quickstart on Tue Apr 22 17:44:06 2025.
+.. whisper-web documentation master file, created by
+   sphinx-quickstart on Sat June 14 15:21:06 2025.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 

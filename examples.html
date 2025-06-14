@@ -6,10 +6,10 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Examples &mdash; Whisper RT 1.0.0 documentation</title>
+  <title>Examples &mdash; Whisper Web 1.0.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
-      <link rel="stylesheet" type="text/css" href="_static/autodoc_pydantic.css" />
+      <link rel="stylesheet" type="text/css" href="_static/autodoc_pydantic.css?v=a0a71c94" />
       <link rel="stylesheet" type="text/css" href="_static/theme_overrides.css" />
 
   
@@ -34,7 +34,7 @@
           
           
           <a href="index.html" class="icon icon-home">
-            Whisper RT
+            Whisper Web
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
@@ -66,7 +66,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="index.html">Whisper RT</a>
+          <a href="index.html">Whisper Web</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -99,19 +99,15 @@ To install the dependencies, run the following command:
 <p>Simply start the server and the cli client:
 .. code-block:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span># In two seperate terminal sessions
-$ uv run python -m server
-$ uv run python -m cli_client
+$ make local.server
+$ make local.cli
 </pre></div>
 </div>
 <p>One can also run a frontend app. We provide a simple streamlit app that shows the transcriptions. The CLI Client still has to be running in the background.
+We provide a Makefile task to run the server, frontend and cli client all at once:
 .. code-block:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span># In another terminal session
-$ uv run python -m streamlit run streamlit_app
-</pre></div>
-</div>
-<p>We also provide a Makefile to make it easier to run the examples. You can run the following command to run the server, cli client and streamlit app all at once:
-.. code-block:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ make run
+$ make local.run-cli
 </pre></div>
 </div>
 </section>
@@ -119,29 +115,113 @@ $ uv run python -m streamlit run streamlit_app
 <h2>Low Level Usage:<a class="headerlink" href="#low-level-usage" title="Link to this heading"></a></h2>
 <p>Running the server in a python script:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">signal</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.server</span><span class="w"> </span><span class="kn">import</span> <span class="n">TranscriptionServer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.whisper_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModelConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.helper</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_running_in_docker</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_rt.whisper_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModelConfig</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_rt.server</span><span class="w"> </span><span class="kn">import</span> <span class="n">TranscriptionServer</span>
+<span class="c1"># Automatically set HOST based on execution environment</span>
+<span class="n">HOST</span> <span class="o">=</span> <span class="s2">&quot;0.0.0.0&quot;</span> <span class="k">if</span> <span class="n">is_running_in_docker</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;127.0.0.1&quot;</span>
+<span class="n">PORT</span> <span class="o">=</span> <span class="mi">8000</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">create_default_model_config</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">ModelConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a default model configuration.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">ModelConfig</span><span class="p">(</span>
+        <span class="n">model_size</span><span class="o">=</span><span class="s2">&quot;small&quot;</span><span class="p">,</span>  <span class="c1"># Use small model as default for faster startup</span>
+        <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span>  <span class="c1"># Use CPU for broader compatibility</span>
+        <span class="n">continuous</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">use_vad</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">samplerate</span><span class="o">=</span><span class="mi">16000</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">monitor_sessions</span><span class="p">(</span><span class="n">server</span><span class="p">:</span> <span class="n">TranscriptionServer</span><span class="p">,</span> <span class="n">interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Monitor sessions and clean up inactive ones periodically.&quot;&quot;&quot;</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">interval</span><span class="p">)</span>
+            <span class="k">await</span> <span class="n">server</span><span class="o">.</span><span class="n">cleanup_inactive_sessions</span><span class="p">()</span>
+
+            <span class="n">active_sessions</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">server</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">active_sessions</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Active sessions: </span><span class="si">{</span><span class="n">active_sessions</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">session_id</span><span class="p">,</span> <span class="n">session</span> <span class="ow">in</span> <span class="n">server</span><span class="o">.</span><span class="n">client_sessions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="n">status</span> <span class="o">=</span> <span class="s2">&quot;running&quot;</span> <span class="k">if</span> <span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">inference_task</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">session</span><span class="o">.</span><span class="n">inference_task</span><span class="o">.</span><span class="n">done</span><span class="p">())</span> <span class="k">else</span> <span class="s2">&quot;stopped&quot;</span>
+                    <span class="n">queue_size</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">audio_queue</span><span class="o">.</span><span class="n">qsize</span><span class="p">()</span>
+                    <span class="n">transcription_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">transcriptions</span><span class="p">)</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2">, queue=</span><span class="si">{</span><span class="n">queue_size</span><span class="si">}</span><span class="s2">, transcriptions=</span><span class="si">{</span><span class="n">transcription_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Session monitor error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
 
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="n">model_config</span> <span class="o">=</span> <span class="n">ModelConfig</span><span class="p">()</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Main server function.&quot;&quot;&quot;</span>
+    <span class="c1"># Create server with default configuration</span>
+    <span class="n">default_config</span> <span class="o">=</span> <span class="n">create_default_model_config</span><span class="p">()</span>
+    <span class="n">server</span> <span class="o">=</span> <span class="n">TranscriptionServer</span><span class="p">(</span><span class="n">default_model_config</span><span class="o">=</span><span class="n">default_config</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="n">HOST</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="n">PORT</span><span class="p">)</span>
 
-    <span class="c1"># Start API</span>
-    <span class="n">server</span> <span class="o">=</span> <span class="n">TranscriptionServer</span><span class="p">(</span><span class="n">model_config</span><span class="o">=</span><span class="n">model_config</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Starting Multi-Client Transcription Server&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">40</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Environment: </span><span class="si">{</span><span class="s1">&#39;Docker&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">is_running_in_docker</span><span class="p">()</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;Local/User&#39;</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Host: </span><span class="si">{</span><span class="n">server</span><span class="o">.</span><span class="n">host</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Port: </span><span class="si">{</span><span class="n">server</span><span class="o">.</span><span class="n">port</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Default model: </span><span class="si">{</span><span class="n">default_config</span><span class="o">.</span><span class="n">model_size</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Default device: </span><span class="si">{</span><span class="n">default_config</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">()</span>
+
+    <span class="c1"># Start the FastAPI server in a thread</span>
     <span class="n">server</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
 
-    <span class="c1"># Start all tasks in parallel</span>
-    <span class="k">await</span> <span class="n">server</span><span class="o">.</span><span class="n">execute_event_loop</span><span class="p">()</span>
+    <span class="c1"># Wait a moment for server to start</span>
+    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># Start session monitoring</span>
+    <span class="n">monitor_task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">monitor_sessions</span><span class="p">(</span><span class="n">server</span><span class="p">))</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Keep server running</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Shutting down server...&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Cancel monitoring</span>
+        <span class="n">monitor_task</span><span class="o">.</span><span class="n">cancel</span><span class="p">()</span>
+
+        <span class="c1"># Cleanup all sessions</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Cleaning up sessions...&quot;</span><span class="p">)</span>
+        <span class="n">session_ids</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">server</span><span class="o">.</span><span class="n">client_sessions</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="k">for</span> <span class="n">session_id</span> <span class="ow">in</span> <span class="n">session_ids</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">await</span> <span class="n">server</span><span class="o">.</span><span class="n">remove_session</span><span class="p">(</span><span class="n">session_id</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error cleaning up session </span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Server stopped.&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">signal_handler</span><span class="p">(</span><span class="n">signum</span><span class="p">,</span> <span class="n">frame</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Handle interrupt signals gracefully.&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Received signal </span><span class="si">{</span><span class="n">signum</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 
 
 <span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="c1"># Setup signal handlers</span>
+    <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">signal_handler</span><span class="p">)</span>
+    <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGTERM</span><span class="p">,</span> <span class="n">signal_handler</span><span class="p">)</span>
+
     <span class="k">try</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Activating wire...&quot;</span><span class="p">)</span>
         <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
     <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
-        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Interrupted by user&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Server stopped by user&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Server error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="admonition note">
@@ -150,67 +230,220 @@ $ uv run python -m streamlit run streamlit_app
 </div>
 <p>Running a simple client in a python script:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">aiohttp</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">websockets</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">soundfile</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sf</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_rt</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeneratorConfig</span><span class="p">,</span> <span class="n">InputStreamGenerator</span><span class="p">,</span> <span class="n">GeneratorManager</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.inputstream_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeneratorConfig</span><span class="p">,</span> <span class="n">InputStreamGenerator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.management</span><span class="w"> </span><span class="kn">import</span> <span class="n">AudioManager</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.events</span><span class="w"> </span><span class="kn">import</span> <span class="n">EventBus</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.helper</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_server_urls</span>
 
-<span class="n">BASE_ADDRESS</span> <span class="o">=</span> <span class="s2">&quot;127.0.0.1:8000&quot;</span>
-<span class="n">API_BASE_URL</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;http://</span><span class="si">{</span><span class="n">BASE_ADDRESS</span><span class="si">}</span><span class="s2">&quot;</span>
-<span class="n">WS_BASE_URL</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;ws://</span><span class="si">{</span><span class="n">BASE_ADDRESS</span><span class="si">}</span><span class="s2">/ws/transcribe&quot;</span>
+<span class="n">API_BASE_URL</span><span class="p">,</span> <span class="n">WS_BASE_URL</span> <span class="o">=</span> <span class="n">get_server_urls</span><span class="p">()</span>
 
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">stream_audio</span><span class="p">(</span><span class="n">generator_manager</span><span class="p">):</span>
-    <span class="k">async</span> <span class="k">with</span> <span class="n">websockets</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">WS_BASE_URL</span><span class="p">)</span> <span class="k">as</span> <span class="n">ws</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Connected to WebSocket&quot;</span><span class="p">)</span>
-        <span class="n">generator_manager</span><span class="o">.</span><span class="n">websocket_status</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
 
-        <span class="k">try</span><span class="p">:</span>
-            <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">generator_manager</span><span class="o">.</span><span class="n">generator_status</span><span class="o">.</span><span class="n">is_set</span><span class="p">():</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">create_session_with_model</span><span class="p">(</span><span class="n">base_url</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">model_size</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;small&quot;</span><span class="p">,</span> <span class="n">counter</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="o">|</span><span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a new transcription session with a specific model configuration.&quot;&quot;&quot;</span>
+    <span class="n">failed_tries</span> <span class="o">=</span> <span class="n">counter</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">async</span> <span class="k">with</span> <span class="n">aiohttp</span><span class="o">.</span><span class="n">ClientSession</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+            <span class="c1"># Create model config</span>
+            <span class="n">model_config</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;model_size&quot;</span><span class="p">:</span> <span class="n">model_size</span><span class="p">,</span>
+                <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="s2">&quot;cuda&quot;</span><span class="p">,</span>  <span class="c1"># Use CPU for this example</span>
+                <span class="s2">&quot;continuous&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                <span class="s2">&quot;use_vad&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="s2">&quot;samplerate&quot;</span><span class="p">:</span> <span class="mi">16000</span><span class="p">,</span>
+            <span class="p">}</span>
 
-                    <span class="n">audio_np</span> <span class="o">=</span> <span class="n">generator_manager</span><span class="o">.</span><span class="n">audio</span>  <span class="c1"># Should return np.ndarray (shape: [samples, channels])</span>
+            <span class="c1"># Create session</span>
+            <span class="k">async</span> <span class="k">with</span> <span class="n">session</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/sessions&quot;</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="n">model_config</span><span class="p">)</span> <span class="k">as</span> <span class="n">response</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                    <span class="n">session_id</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;session_id&quot;</span><span class="p">]</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Created session </span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2"> with model </span><span class="si">{</span><span class="n">model_size</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">session_id</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">aiohttp</span><span class="o">.</span><span class="n">ClientResponseError</span><span class="p">(</span>
+                        <span class="n">request_info</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">request_info</span><span class="p">,</span>
+                        <span class="n">history</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">history</span><span class="p">,</span>
+                        <span class="n">status</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">status</span><span class="p">,</span>
+                        <span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Failed to create session: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                        <span class="n">headers</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">headers</span>
+                    <span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error creating session: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># Wait a bit before retrying</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="k">await</span> <span class="n">create_session_with_model</span><span class="p">(</span><span class="n">base_url</span><span class="p">,</span> <span class="n">model_size</span><span class="p">,</span> <span class="n">counter</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">failed_tries</span> <span class="o">&lt;</span> <span class="mi">15</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
 
-                    <span class="c1"># Convert to WAV bytes in-memory</span>
-                    <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">buffer</span><span class="p">:</span>
-                        <span class="n">sf</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">buffer</span><span class="p">,</span> <span class="n">audio_np</span><span class="p">,</span> <span class="n">samplerate</span><span class="o">=</span><span class="mi">16000</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s1">&#39;WAV&#39;</span><span class="p">)</span>  <span class="c1"># or whatever your sample rate is</span>
-                        <span class="n">wav_bytes</span> <span class="o">=</span> <span class="n">buffer</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
 
-                    <span class="k">await</span> <span class="n">ws</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">wav_bytes</span><span class="p">)</span>
-                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Sent audio chunk&quot;</span><span class="p">)</span>
-                    <span class="n">generator_manager</span><span class="o">.</span><span class="n">generator_status</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
-                    <span class="n">generator_manager</span><span class="o">.</span><span class="n">websocket_status</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">list_sessions</span><span class="p">(</span><span class="n">base_url</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;List all active sessions.&quot;&quot;&quot;</span>
+    <span class="k">async</span> <span class="k">with</span> <span class="n">aiohttp</span><span class="o">.</span><span class="n">ClientSession</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+        <span class="k">async</span> <span class="k">with</span> <span class="n">session</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/sessions&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Active sessions (</span><span class="si">{</span><span class="n">data</span><span class="p">[</span><span class="s1">&#39;total_sessions&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">):&quot;</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">session_info</span> <span class="ow">in</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;sessions&quot;</span><span class="p">]:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Session ID: </span><span class="si">{</span><span class="n">session_info</span><span class="p">[</span><span class="s1">&#39;session_id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Model: </span><span class="si">{</span><span class="n">session_info</span><span class="p">[</span><span class="s1">&#39;model_configuration&#39;</span><span class="p">][</span><span class="s1">&#39;model_size&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Inference running: </span><span class="si">{</span><span class="n">session_info</span><span class="p">[</span><span class="s1">&#39;inference_running&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Transcriptions: </span><span class="si">{</span><span class="n">session_info</span><span class="p">[</span><span class="s1">&#39;transcription_count&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Audio queue size: </span><span class="si">{</span><span class="n">session_info</span><span class="p">[</span><span class="s1">&#39;audio_queue_size&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="nb">print</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to list sessions: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-                <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.25</span><span class="p">)</span>  <span class="c1"># Prevent busy waiting</span>
 
-                <span class="n">current</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">API_BASE_URL</span><span class="si">}</span><span class="s2">/transcription/current&quot;</span><span class="p">)</span>
-                <span class="n">final</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">API_BASE_URL</span><span class="si">}</span><span class="s2">/transcription/final&quot;</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_session_status</span><span class="p">(</span><span class="n">base_url</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get detailed status for a specific session.&quot;&quot;&quot;</span>
+    <span class="k">async</span> <span class="k">with</span> <span class="n">aiohttp</span><span class="o">.</span><span class="n">ClientSession</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+        <span class="k">async</span> <span class="k">with</span> <span class="n">session</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/sessions/</span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2">/status&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Session </span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2"> status:&quot;</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Inference running: </span><span class="si">{</span><span class="n">data</span><span class="p">[</span><span class="s1">&#39;inference_running&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Audio queue size: </span><span class="si">{</span><span class="n">data</span><span class="p">[</span><span class="s1">&#39;audio_queue_size&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Model: </span><span class="si">{</span><span class="n">data</span><span class="p">[</span><span class="s1">&#39;model_configuration&#39;</span><span class="p">][</span><span class="s1">&#39;model_size&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to get session status: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-                <span class="n">current_text</span> <span class="o">=</span> <span class="n">current</span><span class="o">.</span><span class="n">json</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;current_transcription&quot;</span><span class="p">,</span> <span class="s2">&quot;[No data]&quot;</span><span class="p">)</span>
-                <span class="n">final_text</span> <span class="o">=</span> <span class="n">final</span><span class="o">.</span><span class="n">json</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;current_transcription&quot;</span><span class="p">,</span> <span class="s2">&quot;[No data]&quot;</span><span class="p">)</span>
 
-                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Current: </span><span class="si">{</span><span class="n">current_text</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Final: </span><span class="si">{</span><span class="n">final_text</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">stream_audio</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">manager</span><span class="p">:</span> <span class="n">AudioManager</span><span class="p">):</span>
+    <span class="c1"># Connect to WebSocket</span>
+    <span class="n">uri</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">WS_BASE_URL</span><span class="si">}</span><span class="s2">/ws/transcribe/</span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2">&quot;</span>
 
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error during streaming:&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+    <span class="c1"># Connect without using context manager to keep connection alive</span>
+    <span class="n">ws</span> <span class="o">=</span> <span class="k">await</span> <span class="n">websockets</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">uri</span><span class="p">)</span>
 
-        <span class="k">await</span> <span class="n">ws</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Monitor and send audio chunks</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="c1"># Get audio data</span>
+            <span class="n">audio_chunk</span> <span class="o">=</span> <span class="k">await</span> <span class="n">manager</span><span class="o">.</span><span class="n">get_next_audio_chunk</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">audio_chunk</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+                <span class="k">continue</span>  <span class="c1"># No audio chunk available, skip iteration</span>
+
+            <span class="n">chunk</span><span class="p">,</span> <span class="n">is_final</span> <span class="o">=</span> <span class="n">audio_chunk</span>
+
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processing audio chunk: </span><span class="si">{</span><span class="n">chunk</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, final: </span><span class="si">{</span><span class="n">is_final</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">chunk</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># Convert to numpy array and ensure proper format</span>
+                <span class="n">audio_data</span> <span class="o">=</span> <span class="n">chunk</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+
+                <span class="c1"># Convert to WAV bytes</span>
+                <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">buffer</span><span class="p">:</span>
+                    <span class="n">sf</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">buffer</span><span class="p">,</span> <span class="n">audio_data</span><span class="p">,</span> <span class="n">samplerate</span><span class="o">=</span><span class="mi">16000</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;WAV&quot;</span><span class="p">)</span>
+                    <span class="n">wav_bytes</span> <span class="o">=</span> <span class="n">buffer</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+
+                <span class="c1"># Send to WebSocket with custom binary protocol</span>
+                <span class="c1"># First byte indicates if final (1) or not (0)</span>
+                <span class="n">final_flag</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\x01</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">is_final</span> <span class="k">else</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\x00</span><span class="s2">&quot;</span>
+                <span class="n">message</span> <span class="o">=</span> <span class="n">final_flag</span> <span class="o">+</span> <span class="n">wav_bytes</span>
+                <span class="k">await</span> <span class="n">ws</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Sent audio chunk: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">wav_bytes</span><span class="p">)</span><span class="si">}</span><span class="s2"> bytes, final: </span><span class="si">{</span><span class="n">is_final</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>  <span class="c1"># Prevent busy waiting</span>
+    <span class="k">except</span> <span class="n">websockets</span><span class="o">.</span><span class="n">ConnectionClosedError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;WebSocket connection closed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error during audio streaming: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">await</span> <span class="n">ws</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_transcriptions</span><span class="p">(</span><span class="n">base_url</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get transcriptions for a specific session.&quot;&quot;&quot;</span>
+    <span class="k">async</span> <span class="k">with</span> <span class="n">aiohttp</span><span class="o">.</span><span class="n">ClientSession</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+        <span class="k">async</span> <span class="k">with</span> <span class="n">session</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/sessions/</span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2">/transcriptions&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                <span class="n">transcriptions</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;transcriptions&quot;</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">transcriptions</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Transcriptions for session </span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">transcription</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">transcriptions</span><span class="p">):</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">transcription</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No transcriptions yet for session </span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to get transcriptions: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">cleanup_session</span><span class="p">(</span><span class="n">base_url</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Clean up a session.&quot;&quot;&quot;</span>
+    <span class="k">async</span> <span class="k">with</span> <span class="n">aiohttp</span><span class="o">.</span><span class="n">ClientSession</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+        <span class="k">async</span> <span class="k">with</span> <span class="n">session</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/sessions/</span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">response</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Cleaned up session: </span><span class="si">{</span><span class="n">data</span><span class="p">[</span><span class="s1">&#39;message&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to cleanup session: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
 
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="n">generator_config</span> <span class="o">=</span> <span class="n">GeneratorConfig</span><span class="p">(</span><span class="n">from_file</span><span class="o">=</span><span class="s2">&quot;./jfk_speech_fub.mp3&quot;</span><span class="p">)</span>
-    <span class="n">generator_manager</span> <span class="o">=</span> <span class="n">GeneratorManager</span><span class="p">()</span>
-    <span class="n">generator</span> <span class="o">=</span> <span class="n">InputStreamGenerator</span><span class="p">(</span><span class="n">generator_config</span><span class="p">,</span> <span class="n">generator_manager</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Multi-Client, Multi-Model Transcription Server Demo&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">50</span><span class="p">)</span>
 
-    <span class="n">inputstream_task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">generator</span><span class="o">.</span><span class="n">process_audio</span><span class="p">())</span>
-    <span class="n">stream_task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">stream_audio</span><span class="p">(</span><span class="n">generator_manager</span><span class="p">))</span>
-    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">inputstream_task</span><span class="p">,</span> <span class="n">stream_task</span><span class="p">)</span>
+    <span class="c1"># Wait a bit for server to be ready</span>
+    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Create sessions with different model configurations</span>
+        <span class="n">session_id</span> <span class="o">=</span> <span class="k">await</span> <span class="n">create_session_with_model</span><span class="p">(</span><span class="n">API_BASE_URL</span><span class="p">,</span> <span class="s2">&quot;small&quot;</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">session_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;Failed to create session&quot;</span>
+
+        <span class="c1"># List all sessions</span>
+        <span class="k">await</span> <span class="n">list_sessions</span><span class="p">(</span><span class="n">API_BASE_URL</span><span class="p">)</span>
+
+        <span class="c1"># Get status for each session</span>
+        <span class="k">await</span> <span class="n">get_session_status</span><span class="p">(</span><span class="n">API_BASE_URL</span><span class="p">,</span> <span class="n">session_id</span><span class="p">)</span>
+
+        <span class="c1"># Create generator config and manager</span>
+        <span class="n">event_bus</span> <span class="o">=</span> <span class="n">EventBus</span><span class="p">()</span>
+        <span class="n">generator_config</span> <span class="o">=</span> <span class="n">GeneratorConfig</span><span class="p">()</span>
+        <span class="n">generator_manager</span> <span class="o">=</span> <span class="n">AudioManager</span><span class="p">(</span><span class="n">event_bus</span><span class="p">)</span>
+        <span class="n">generator</span> <span class="o">=</span> <span class="n">InputStreamGenerator</span><span class="p">(</span><span class="n">generator_config</span><span class="p">,</span> <span class="n">event_bus</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;InputStreamGenerator created&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;AudioManager created&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Starting audio processing...&quot;</span><span class="p">)</span>
+
+        <span class="n">audio_task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">generator</span><span class="o">.</span><span class="n">process_audio</span><span class="p">())</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Audio processing task started&quot;</span><span class="p">)</span>
+        <span class="n">stream_task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">stream_audio</span><span class="p">(</span><span class="n">session_id</span><span class="p">,</span> <span class="n">generator_manager</span><span class="p">))</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;WebSocket streaming task started&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Run the streaming function</span>
+        <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">audio_task</span><span class="p">,</span> <span class="n">stream_task</span><span class="p">,</span> <span class="n">return_exceptions</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Demo error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="c1"># Cleanup</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">await</span> <span class="n">cleanup_session</span><span class="p">(</span><span class="n">API_BASE_URL</span><span class="p">,</span> <span class="n">session_id</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to cleanup session: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
 
 <span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-    <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Starting client...&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Make sure the TranscriptionServer is running on localhost:8000&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Press Ctrl+C to stop</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+    <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Client stopped by user&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CLient failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="admonition note">

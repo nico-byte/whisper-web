@@ -6,10 +6,10 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>whisper_web package &mdash; Whisper RT 1.0.0 documentation</title>
+  <title>whisper_web package &mdash; Whisper Web 1.0.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
-      <link rel="stylesheet" type="text/css" href="_static/autodoc_pydantic.css" />
+      <link rel="stylesheet" type="text/css" href="_static/autodoc_pydantic.css?v=a0a71c94" />
       <link rel="stylesheet" type="text/css" href="_static/theme_overrides.css" />
 
   
@@ -32,7 +32,7 @@
           
           
           <a href="index.html" class="icon icon-home">
-            Whisper RT
+            Whisper Web
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
@@ -60,7 +60,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="index.html">Whisper RT</a>
+          <a href="index.html">Whisper Web</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -155,17 +155,51 @@
 <dt class="sig sig-object py" id="whisper_web.events.EventBus">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">whisper_web.events.</span></span><span class="sig-name descname"><span class="pre">EventBus</span></span><a class="reference internal" href="_modules/whisper_web/events.html#EventBus"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.events.EventBus" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
-<p>Simple event bus for decoupled communication.</p>
+<p>Asynchronous event bus implementation for decoupled component communication.</p>
+<p>The EventBus provides a publish-subscribe pattern that enables loose coupling between
+different components of the whisper-web transcription system. Components can subscribe
+to specific event types and publish events without direct knowledge of other components.</p>
+<p><strong>Key Features:</strong></p>
+<ul class="simple">
+<li><p><strong>Type-Safe Subscriptions</strong>: Events are registered by their concrete type</p></li>
+<li><p><strong>Async/Sync Handler Support</strong>: Automatically detects and handles both coroutine and regular functions</p></li>
+<li><p><strong>Multiple Subscribers</strong>: Multiple handlers can subscribe to the same event type</p></li>
+<li><p><strong>Decoupled Architecture</strong>: Publishers don’t need to know about subscribers</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>_subscribers</strong> – Internal mapping of event types to their handler lists</p>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.events.EventBus.publish">
 <em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">publish</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#whisper_web.events.Event" title="whisper_web.events.Event"><span class="pre">Event</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/whisper_web/events.html#EventBus.publish"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.events.EventBus.publish" title="Link to this definition"></a></dt>
-<dd><p>Publish an event to all subscribers.</p>
+<dd><p>Publish an event to all registered subscribers of its type.</p>
+<p>This method delivers the event to all handlers that have subscribed to the
+event’s specific type. Both synchronous and asynchronous handlers are supported
+and will be called appropriately.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>event</strong> (<a class="reference internal" href="#whisper_web.events.Event" title="whisper_web.events.Event"><code class="xref py py-class docutils literal notranslate"><span class="pre">Event</span></code></a>) – The event instance to publish to subscribers</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.events.EventBus.subscribe">
 <span class="sig-name descname"><span class="pre">subscribe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">handler</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/whisper_web/events.html#EventBus.subscribe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.events.EventBus.subscribe" title="Link to this definition"></a></dt>
-<dd><p>Subscribe to an event type.</p>
+<dd><p>Register a handler function to receive events of a specific type.</p>
+<p>When an event of the specified type is published, the handler will be called
+with the event instance as its argument. Handlers can be either synchronous
+functions or async coroutines.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>event_type</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">type</span></code>) – The class <code class="xref py py-class docutils literal notranslate"><span class="pre">type</span></code> of events this handler should receive</p></li>
+<li><p><strong>handler</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">Callable[[Any],</span> <span class="pre">None]</span></code>) – Function or coroutine to call when events are published</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 </dd></dl>
@@ -271,46 +305,43 @@ processed, and segmented before being sent to a speech recognition system.</p>
 speech segments and dispatching them for transcription. It supports both live microphone streams
 and pre-recorded audio files, and includes configurable voice activity detection (VAD) heuristics
 and silence detection.</p>
-<p>Core Features:</p>
-<blockquote>
-<div><ul class="simple">
+<p><strong>Core Features:</strong></p>
+<ul class="simple">
 <li><p><strong>Real-Time Audio Input</strong>: Captures audio using a microphone input stream.</p></li>
 <li><p><strong>File-Based Input</strong>: Reads and processes audio from a file if specified.</p></li>
 <li><p><strong>Silence Threshold Calibration</strong>: Dynamically computes the silence threshold based on environmental noise.</p></li>
-<li><p><strong>Voice Activity Detection (VAD)</strong>: Supports both model-based and heuristic-based VAD.</p></li>
+<li><p><strong>Voice Activity Detection (VAD)</strong>: Supports heuristic-based VAD.</p></li>
 <li><p><strong>Phrase Segmentation</strong>: Aggregates audio buffers into speech phrases based on silence duration and loudness.</p></li>
 <li><p><strong>Asynchronous Processing</strong>: Fully asynchronous design suitable for non-blocking audio pipelines.</p></li>
 </ul>
-</div></blockquote>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>generator_config</strong> (<a class="reference internal" href="#whisper_web.inputstream_generator.GeneratorConfig" title="whisper_web.inputstream_generator.GeneratorConfig"><code class="xref py py-class docutils literal notranslate"><span class="pre">GeneratorConfig</span></code></a>) – Configuration object with audio processing settings</p></li>
-<li><p><strong>transcription_manager</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">TranscriptionManager</span></code>) – Instance of the TranscriptionManager to handle transcription logic</p></li>
+<li><p><strong>event_bus</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">EventBus</span></code>) – Instance of the EventBus to handle events</p></li>
 </ul>
 </dd>
 <dt class="field-even">Variables<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>_samplerate</strong> – Sample rate for audio processing as <code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>.</p></li>
-<li><p><strong>_blocksize</strong> – Size of each audio block as <code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>.</p></li>
-<li><p><strong>_adjustment_time</strong> – Time in seconds for adjusting silence threshold as <code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>.</p></li>
-<li><p><strong>_min_chunks</strong> – Minimum number of chunks to process as <code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>.</p></li>
-<li><p><strong>_continuous</strong> – Flag for continuous processing as <code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>.</p></li>
-<li><p><strong>_use_vad_model</strong> – Flag for using VAD model as <code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>.</p></li>
-<li><p><strong>_use_vad_heuristic</strong> – Flag for using VAD heuristic as <code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>.</p></li>
-<li><p><strong>_global_ndarray</strong> – Global buffer for audio data as <code class="xref py py-class docutils literal notranslate"><span class="pre">np.ndarray</span></code>.</p></li>
-<li><p><strong>_phrase_delta_blocks</strong> – Max number of blocks for inbetween phrases as <code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>.</p></li>
-<li><p><strong>_silence_threshold</strong> – Threshold for silence detection as <code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code>.</p></li>
-<li><p><strong>_max_blocksize</strong> – Maximum size of audio block as <code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>.</p></li>
-<li><p><strong>_max_chunks</strong> – Maximum number of chunks as <code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>.</p></li>
-<li><p><strong>_generator_manager</strong> – Instance of the <code class="xref py py-class docutils literal notranslate"><span class="pre">GeneratorManager</span></code> to handle audio chunks and status.</p></li>
-<li><p><strong>_from_file</strong> – Path to the audio file if specified as <code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>.</p></li>
+<li><p><strong>samplerate</strong> – Sample rate for audio processing</p></li>
+<li><p><strong>blocksize</strong> – Size of each audio block</p></li>
+<li><p><strong>adjustment_time</strong> – Time in seconds for adjusting silence threshold</p></li>
+<li><p><strong>min_chunks</strong> – Minimum number of chunks to process</p></li>
+<li><p><strong>continuous</strong> – Flag for continuous processing</p></li>
+<li><p><strong>event_bus</strong> – Event bus for handling events</p></li>
+<li><p><strong>global_ndarray</strong> – Global buffer for audio data</p></li>
+<li><p><strong>phrase_delta_blocks</strong> – Max number of blocks for inbetween phrases</p></li>
+<li><p><strong>silence_threshold</strong> – Threshold for silence detection</p></li>
+<li><p><strong>max_blocksize</strong> – Maximum size of audio block</p></li>
+<li><p><strong>max_blocksize</strong> – Maximum size of audio block in samples</p></li>
+<li><p><strong>max_chunks</strong> – Maximum number of chunks</p></li>
+<li><p><strong>from_file</strong> – Path to the audio file if specified</p></li>
 </ul>
 </dd>
 </dl>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Instantiate this class with a <cite>GeneratorConfig</cite> and <cite>TranscriptionManager</cite>, then call <cite>process_audio()</cite>
+<p>Instantiate this class with a <cite>GeneratorConfig</cite> and <cite>EventBus</cite>, then call <cite>process_audio()</cite>
 to start listening or processing input.</p>
 </div>
 <dl class="py method">
@@ -318,21 +349,19 @@ to start listening or processing input.</p>
 <em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">generate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">AsyncGenerator</span></span></span><a class="reference internal" href="_modules/whisper_web/inputstream_generator.html#InputStreamGenerator.generate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.inputstream_generator.InputStreamGenerator.generate" title="Link to this definition"></a></dt>
 <dd><p>Asynchronously generates audio chunks for processing from a live input stream.</p>
 <p>This method acts as a unified audio generator, yielding blocks of audio data for downstream processing.</p>
-<p>Behavior:</p>
-<blockquote>
-<div><ul class="simple">
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
 <li><p>Opens an audio input stream using <cite>sounddevice.InputStream</cite>.</p></li>
 <li><p>Captures audio in blocks of <cite>self.blocksize</cite>, configured for mono 16-bit input.</p></li>
 <li><p>Uses a thread-safe callback to push incoming audio data into an <cite>asyncio.Queue</cite>.</p></li>
 <li><p>Yields <cite>(in_data, status)</cite> tuples from the queue as they become available.</p></li>
 </ul>
-</div></blockquote>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A tuple containing the raw audio block and its status.</p>
+<dd class="field-odd"><p>A <code class="xref py py-class docutils literal notranslate"><span class="pre">tuple</span></code> containing the raw audio block and its status.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>Iterator[Tuple[np.ndarray, CallbackFlags]]</p>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">Iterator[Tuple[np.ndarray,</span> <span class="pre">CallbackFlags]]</span></code></p>
 </dd>
 </dl>
 </dd></dl>
@@ -344,56 +373,21 @@ to start listening or processing input.</p>
 <p>This method reads audio from the given file path, optionally resamples and converts it to mono,
 and then splits the audio into chunks that simulate live microphone input. Each chunk is passed
 to the transcription manager after waiting for the current transcription to complete.</p>
-<p>Workflow:</p>
-<blockquote>
-<div><ol class="arabic simple">
-<li><dl class="simple">
-<dt><strong>File Loading</strong>:</dt><dd><ul class="simple">
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
 <li><p>Reads audio from the specified file using <cite>soundfile</cite>.</p></li>
 <li><p>Supports multi-channel audio, which is converted to mono by selecting the first channel.</p></li>
-</ul>
-</dd>
-</dl>
-</li>
-<li><dl class="simple">
-<dt><strong>Resampling</strong>:</dt><dd><ul class="simple">
-<li><dl class="simple">
-<dt>If the audio files sample rate differs from the expected rate (<cite>self.samplerate</cite>),</dt><dd><p>the data is resampled to match.</p>
-</dd>
-</dl>
-</li>
-</ul>
-</dd>
-</dl>
-</li>
-<li><dl class="simple">
-<dt><strong>Chunking</strong>:</dt><dd><ul class="simple">
+<li><p>If the audio files sample rate differs from the expected rate (<cite>self.samplerate</cite>),
+the data is resampled to match.</p></li>
 <li><p>Audio is divided into blocks of <cite>self.max_blocksize</cite> samples.</p></li>
 <li><p>The final chunk is zero-padded if it is shorter than the expected size.</p></li>
-</ul>
-</dd>
-</dl>
-</li>
-<li><dl class="simple">
-<dt><strong>Transcription Dispatch</strong>:</dt><dd><ul class="simple">
 <li><p>Each chunk is set as the current buffer and dispatched for transcription using <cite>_send_audio()</cite>.</p></li>
 <li><p>Waits for the transcription manager’s signal (<cite>transcription_status.wait()</cite>) before continuing.</p></li>
-</ul>
-</dd>
-</dl>
-</li>
-<li><dl class="simple">
-<dt><strong>Timing Info</strong>:</dt><dd><ul class="simple">
 <li><p>Logs the total time taken to process the file.</p></li>
 </ul>
-</dd>
-</dl>
-</li>
-</ol>
-</div></blockquote>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>file_path</strong> (<em>str</em>) – Path to the audio file to be processed</p>
+<dd class="field-odd"><p><strong>file_path</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – Path to the audio file to be processed</p>
 </dd>
 </dl>
 </dd></dl>
@@ -402,31 +396,13 @@ to the transcription manager after waiting for the current transcription to comp
 <dt class="sig sig-object py" id="whisper_web.inputstream_generator.InputStreamGenerator.process_audio">
 <em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">process_audio</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/whisper_web/inputstream_generator.html#InputStreamGenerator.process_audio"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.inputstream_generator.InputStreamGenerator.process_audio" title="Link to this definition"></a></dt>
 <dd><p>Entry point for audio processing based on the selected VAD configuration.</p>
-<p>Determines which voice activity detection (VAD) strategy to use.</p>
+<p>Determines if the input is from a file or a live stream, sets up the silence threshold,
+and processes audio input accordingly.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<ul class="simple">
-<li><p>If VAD heuristic is enabled: processes and filters audio based on conditional silence detection.</p></li>
-<li><p>Else: buffers full audio input and passes it to the TranscriptionManager.</p></li>
-</ul>
+<p>If <cite>from_file</cite> is set, it processes the audio from the specified file.
+If <cite>from_file</cite> is not set, it sets the silence threshold and processes audio using heuristics.</p>
 </div>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="whisper_web.inputstream_generator.InputStreamGenerator.process_raw_audio">
-<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">process_raw_audio</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/whisper_web/inputstream_generator.html#InputStreamGenerator.process_raw_audio"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.inputstream_generator.InputStreamGenerator.process_raw_audio" title="Link to this definition"></a></dt>
-<dd><p>Continuously collects and dispatches raw audio chunks without any VAD filtering.</p>
-<p>This method is used when VAD heuristics is not enabled.
-It simply accumulates incoming audio buffers and dispatches them once a minimum
-number of chunks (<cite>self.min_chunks</cite>) has been collected.</p>
-<p>Behavior:</p>
-<blockquote>
-<div><ul class="simple">
-<li><p>Audio is collected unfiltered from the input stream.</p></li>
-<li><p>When the total buffered data reaches the defined threshold, it is sent for transcription.</p></li>
-<li><p>In non-continuous mode (<cite>self.continuous</cite> = False), processing stops after the first valid dispatch.</p></li>
-</ul>
-</div></blockquote>
 </dd></dl>
 
 <dl class="py method">
@@ -435,50 +411,17 @@ number of chunks (<cite>self.min_chunks</cite>) has been collected.</p>
 <dd><p>Continuously processes audio input, detects significant speech segments, and dispatches them for transcription.</p>
 <p>This method operates in an asynchronous loop, consuming real-time audio buffers from <cite>generate()</cite>, aggregating
 meaningful speech segments while filtering out silence or noise based on a calculated silence threshold.</p>
-<p>Behavior:</p>
-<blockquote>
-<div><ul class="simple">
-<li><dl class="simple">
-<dt><strong>Silence Detection</strong>:</dt><dd><ul>
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
 <li><p>Buffers with low average volume (below <cite>self.silence_threshold</cite>) are considered silent.</p></li>
-<li><dl class="simple">
-<dt>If <cite>self.use_vad_heuristic</cite> is enabled and several consecutive silent blocks are detected,</dt><dd><p>the current speech phrase is considered complete and dispatched via <cite>_send_audio()</cite>.</p>
-</dd>
-</dl>
-</li>
-</ul>
-</dd>
-</dl>
-</li>
-<li><dl class="simple">
-<dt><strong>Buffer Aggregation</strong>:</dt><dd><ul>
 <li><p>Incoming buffers are accumulated in <cite>self.global_ndarray</cite>.</p></li>
-<li><dl class="simple">
-<dt>If a buffer ends in silence and the aggregated data meets the minimum required chunks (<cite>self.min_chunks</cite>),</dt><dd><p>the accumulated audio is dispatched.</p>
-</dd>
-</dl>
-</li>
-</ul>
-</dd>
-</dl>
-</li>
-<li><dl class="simple">
-<dt><strong>Modes</strong>:</dt><dd><ul>
+<li><p>If the accumulated audio exceeds <cite>self.max_chunks</cite>, it is dispatched for transcription.</p></li>
+<li><p>If the size of <cite>self.global_ndarray</cite> is &gt; 0 and the average volume is below the silence threshold,
+empty blocks is incremented by one and if it exceeds <cite>self.phrase_delta_blocks</cite>, the buffer is dispatched.</p></li>
+<li><p>If a buffer does not start or end or is silent the audio is dispatched.</p></li>
 <li><p>In continuous mode (<cite>self.continuous</cite> = True), the method loops indefinitely to process ongoing audio.</p></li>
 <li><p>Otherwise, it exits after the first valid speech phrase is processed.</p></li>
 </ul>
-</dd>
-</dl>
-</li>
-<li><dl class="simple">
-<dt><strong>File Mode</strong>:</dt><dd><ul>
-<li><p>If processing from a file (<cite>self.from_file</cite> is not empty), silence threshold setup is skipped.</p></li>
-</ul>
-</dd>
-</dl>
-</li>
-</ul>
-</div></blockquote>
 </dd></dl>
 
 <dl class="py method">
@@ -487,16 +430,13 @@ meaningful speech segments while filtering out silence or noise based on a calcu
 <dd><p>Dispatches the collected audio buffer for transcription after normalization.</p>
 <p>This method converts the internal audio buffer (<cite>self.global_ndarray</cite>) from
 16-bit PCM format to a normalized float32 waveform in the range [-1.0, 1.0].
-It then assigns the waveform to the appropriate field in the <cite>TranscriptionManager</cite>,
-depending on whether a VAD model is being used.</p>
-<p>Behavior:</p>
-<blockquote>
-<div><ul class="simple">
-<li><p>If <cite>self.use_vad_model</cite> is True, assigns the waveform to <cite>transcription_manager.audio</cite>.</p></li>
-<li><p>Otherwise, assigns the waveform to <cite>transcription_manager.clean_audio</cite>.</p></li>
-<li><p>Clears the internal audio buffer after dispatching.</p></li>
-</ul>
-</div></blockquote>
+It then creates an <cite>AudioChunk</cite> instance with the normalized data and publishes
+it as an <cite>AudioChunkGenerated</cite> event to the event bus.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>is_final</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>) – Indicates if the audio chunk is complete and ready for final processing.</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
@@ -506,33 +446,17 @@ depending on whether a VAD model is being used.</p>
 <p>This method analyzes the average loudness of incoming audio blocks during a short calibration phase
 to determine an appropriate silence threshold. The threshold helps distinguish between background
 noise and meaningful speech during audio processing.</p>
-<p>How it works:</p>
-<blockquote>
-<div><ol class="arabic simple">
-<li><dl class="simple">
-<dt><strong>Calibration Phase</strong>:</dt><dd><ul class="simple">
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
 <li><p>Processes audio blocks for a predefined duration (<cite>_adjustment_time</cite> in seconds).</p></li>
 <li><p>For each block, computes the mean absolute loudness and stores it.</p></li>
-</ul>
-</dd>
-</dl>
-</li>
-<li><dl class="simple">
-<dt><strong>Threshold Calculation</strong>:</dt><dd><ul class="simple">
 <li><p>After enough blocks are collected, calculates the average loudness across all blocks.</p></li>
 <li><p>Sets <cite>self.silence_threshold</cite> to this value, treating it as the baseline for silence.</p></li>
 </ul>
-</dd>
-</dl>
-</li>
-</ol>
-</div></blockquote>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<ul class="simple">
-<li><p>This method is skipped if audio is being read from a file (<cite>self.from_file</cite> is set).</p></li>
-<li><p>Intended to run once before audio processing begins, helping tailor silence detection to the environment.</p></li>
-</ul>
+<p>This method is skipped if audio is being read from a file (<cite>self.from_file</cite> is set).
+Intended to run once before audio processing begins, helping tailor silence detection to the environment.</p>
 </div>
 </dd></dl>
 
@@ -545,27 +469,113 @@ noise and meaningful speech during audio processing.</p>
 <dt class="sig sig-object py" id="whisper_web.management.AudioManager">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">whisper_web.management.</span></span><span class="sig-name descname"><span class="pre">AudioManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event_bus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#whisper_web.events.EventBus" title="whisper_web.events.EventBus"><span class="pre">EventBus</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/whisper_web/management.html#AudioManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.management.AudioManager" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
-<p>Event-driven audio chunk manager.</p>
+<p>Manages audio chunk lifecycle and distribution in the transcription pipeline.</p>
+<p>The AudioManager handles the flow of raw audio chunks from generation to consumption,
+providing a buffered interface between audio input sources and transcription models.
+It operates through event-driven architecture to ensure loose coupling and scalability.</p>
+<p><strong>Core Responsibilities:</strong></p>
+<ul class="simple">
+<li><p><strong>Audio Chunk Buffering</strong>: Maintains a thread-safe queue of processed audio chunks</p></li>
+<li><p><strong>Event-Driven Processing</strong>: Subscribes to audio generation events and manages chunk flow</p></li>
+<li><p><strong>Chunk Metadata Tracking</strong>: Monitors chunk counts and processing statistics</p></li>
+<li><p><strong>Async Chunk Distribution</strong>: Provides non-blocking access to queued audio data</p></li>
+<li><p><strong>Error Handling</strong>: Gracefully handles audio processing errors and timeouts</p></li>
+</ul>
+<p><strong>Event Subscriptions:</strong></p>
+<ul class="simple">
+<li><p><cite>AudioChunkGenerated</cite>: Receives and queues newly generated audio chunks</p></li>
+<li><p><cite>AudioChunkNum</cite>: Updates total expected chunk count for progress tracking</p></li>
+</ul>
+<p><strong>Key Features:</strong></p>
+<ul class="simple">
+<li><p><strong>Thread-Safe Operations</strong>: All queue operations are async-safe for concurrent access</p></li>
+<li><p><strong>Timeout Handling</strong>: Non-blocking audio retrieval with configurable timeouts</p></li>
+<li><p><strong>Progress Tracking</strong>: Monitors processing progress against expected chunk counts</p></li>
+<li><p><strong>Error Resilience</strong>: Continues operation despite individual chunk processing errors</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>event_bus</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">EventBus</span></code>) – Event bus instance for inter-component communication</p>
+</dd>
+<dt class="field-even">Variables<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>audio_chunk_queue</strong> – Thread-safe queue for audio chunk storage</p></li>
+<li><p><strong>processed_chunks</strong> – Counter for successfully processed audio chunks</p></li>
+<li><p><strong>num_chunks</strong> – Total expected number of chunks for current session</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.management.AudioManager.clear_audio_queue">
 <span class="sig-name descname"><span class="pre">clear_audio_queue</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/whisper_web/management.html#AudioManager.clear_audio_queue"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.management.AudioManager.clear_audio_queue" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dd><p>Remove all pending audio chunks from the processing queue.</p>
+<p>Empties the audio chunk queue by discarding all queued audio data.
+Useful for session cleanup or resetting audio processing state.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This operation discards all pending audio chunks and cannot be undone.
+Use with caution during active audio processing sessions.</p>
+</div>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.management.AudioManager.get_next_audio_chunk">
 <em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_next_audio_chunk</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#whisper_web.types.AudioChunk" title="whisper_web.types.AudioChunk"><span class="pre">AudioChunk</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">bool</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/whisper_web/management.html#AudioManager.get_next_audio_chunk"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.management.AudioManager.get_next_audio_chunk" title="Link to this definition"></a></dt>
-<dd><p>Retrieve the next available audio chunk from the queue.</p>
+<dd><p>Retrieve the next available audio chunk from the processing queue.</p>
+<p>Provides non-blocking access to queued audio chunks with timeout handling.
+Returns None when no audio is available within the timeout period, allowing
+callers to handle empty queue conditions gracefully.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Tuple of (AudioChunk, is_final) if available, None if timeout/error</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">Tuple[AudioChunk,</span> <span class="pre">bool]</span></code> | <code class="xref py py-class docutils literal notranslate"><span class="pre">None</span></code></p>
+</dd>
+</dl>
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
+<li><p>Waits up to 1 second for audio chunk availability</p></li>
+<li><p>Returns tuple containing audio chunk and finality flag</p></li>
+<li><p>Returns None on timeout or processing errors</p></li>
+<li><p>Logs errors without raising exceptions</p></li>
+</ul>
 </dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="whisper_web.management.AudioManager.queue_size">
 <em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">queue_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#whisper_web.management.AudioManager.queue_size" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dd><p>Get the current number of audio chunks waiting in the processing queue.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Number of queued audio chunks</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="whisper_web.management.AudioManager.stats">
 <em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">stats</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">dict</span></em><a class="headerlink" href="#whisper_web.management.AudioManager.stats" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dd><p>Get comprehensive statistics about audio chunk processing.</p>
+<p>Provides key metrics for monitoring audio processing performance,
+including queue utilization and chunk processing progress.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dictionary containing audio processing statistics</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code></p>
+</dd>
+</dl>
+<p><strong>Returns:</strong></p>
+<ul class="simple">
+<li><p><cite>queue_size</cite>: Number of audio chunks currently in processing queue</p></li>
+<li><p><cite>processed_chunks</cite>: Total number of audio chunks processed</p></li>
+</ul>
+</dd></dl>
 
 </dd></dl>
 
@@ -573,32 +583,127 @@ noise and meaningful speech during audio processing.</p>
 <dt class="sig sig-object py" id="whisper_web.management.TranscriptionManager">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">whisper_web.management.</span></span><span class="sig-name descname"><span class="pre">TranscriptionManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event_bus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#whisper_web.events.EventBus" title="whisper_web.events.EventBus"><span class="pre">EventBus</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/whisper_web/management.html#TranscriptionManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.management.TranscriptionManager" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
-<p>Event-driven transcription manager.</p>
+<p>Manages the complete transcription pipeline from audio input to text output.</p>
+<p>The TranscriptionManager serves as the central coordinator for the real-time transcription
+process, handling audio chunk queuing, transcription state management, and result aggregation.
+It operates through an event-driven architecture, responding to audio events and publishing
+transcription updates.</p>
+<p><strong>Core Responsibilities:</strong></p>
+<ul class="simple">
+<li><p><strong>Audio Queue Management</strong>: Maintains a thread-safe queue of incoming audio chunks</p></li>
+<li><p><strong>Transcription State Tracking</strong>: Manages both current and historical transcription results</p></li>
+<li><p><strong>Event Coordination</strong>: Subscribes to audio events and publishes transcription updates</p></li>
+<li><p><strong>Inference Loop</strong>: Provides async interface for model inference execution</p></li>
+<li><p><strong>Result Aggregation</strong>: Combines partial and final transcriptions into complete text</p></li>
+</ul>
+<p><strong>Event Subscriptions:</strong></p>
+<ul class="simple">
+<li><p><cite>AudioChunkReceived</cite>: Queues audio data for processing</p></li>
+<li><p><cite>TranscriptionCompleted</cite>: Updates transcription state and publishes results</p></li>
+</ul>
+<p><strong>Event Publications:</strong></p>
+<ul class="simple">
+<li><p><cite>TranscriptionUpdated</cite>: Notifies subscribers of new transcription results</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>event_bus</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">EventBus</span></code>) – Event bus instance for inter-component communication</p>
+</dd>
+<dt class="field-even">Variables<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>transcriptions</strong> – List of completed transcription segments</p></li>
+<li><p><strong>current_transcription</strong> – Current active transcription text</p></li>
+<li><p><strong>audio_queue</strong> – Thread-safe queue for audio processing</p></li>
+<li><p><strong>processed_chunks</strong> – Counter for processed audio chunks</p></li>
+<li><p><strong>num_chunks</strong> – Total expected number of chunks</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.management.TranscriptionManager.clear_audio_queue">
 <span class="sig-name descname"><span class="pre">clear_audio_queue</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/whisper_web/management.html#TranscriptionManager.clear_audio_queue"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.management.TranscriptionManager.clear_audio_queue" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dd><p>Remove all pending audio chunks from the processing queue.</p>
+<p>Empties the audio queue by discarding all queued audio data. Useful
+for resetting the transcription state or handling session cleanup.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This operation discards all pending audio data and cannot be undone.
+Use with caution during active transcription sessions.</p>
+</div>
+</dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="whisper_web.management.TranscriptionManager.full_transcription">
 <em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">full_transcription</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><a class="headerlink" href="#whisper_web.management.TranscriptionManager.full_transcription" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dd><p>Get the complete transcription text including all segments.</p>
+<p>Combines all completed transcription segments with the current active
+transcription to provide the full transcribed text.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Complete transcription text with all segments joined</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="whisper_web.management.TranscriptionManager.queue_size">
 <em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">queue_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#whisper_web.management.TranscriptionManager.queue_size" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dd><p>Get the current number of audio chunks waiting in the processing queue.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Number of queued audio chunks</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.management.TranscriptionManager.run_inference">
 <em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">run_inference</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/whisper_web/management.html#TranscriptionManager.run_inference"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.management.TranscriptionManager.run_inference" title="Link to this definition"></a></dt>
-<dd><p>Main inference loop - no direct dependency on TranscriptionManager.</p>
+<dd><p>Execute the main inference loop for continuous audio processing.</p>
+<p>Continuously retrieves audio data from the queue and passes it to the
+specified model for transcription. Handles timeouts gracefully to prevent
+blocking when no audio is available.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>model</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">Callable[[Tuple[torch.Tensor,</span> <span class="pre">bool]],</span> <span class="pre">Awaitable[None]]</span></code>) – Async callable model that processes audio tensors</p>
+</dd>
+</dl>
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
+<li><p>Runs indefinitely until manually stopped</p></li>
+<li><p>Waits up to 1 second for audio data before timing out</p></li>
+<li><p>Continues processing after timeouts without error</p></li>
+<li><p>Passes audio tensor and finality flag to model</p></li>
+</ul>
 </dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="whisper_web.management.TranscriptionManager.stats">
 <em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">stats</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">dict</span></em><a class="headerlink" href="#whisper_web.management.TranscriptionManager.stats" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dd><p>Get comprehensive statistics about the transcription process.</p>
+<p>Provides key metrics for monitoring transcription performance and state,
+including queue utilization and processing progress.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dictionary containing transcription statistics</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>:class`dict`</p>
+</dd>
+</dl>
+<p><strong>Returns:</strong></p>
+<ul class="simple">
+<li><p><cite>queue_size</cite>: Number of audio chunks in processing queue</p></li>
+<li><p><cite>processed_chunks</cite>: Total number of processed audio chunks</p></li>
+<li><p><cite>num_transcriptions</cite>: Number of completed transcription segments</p></li>
+</ul>
+</dd></dl>
 
 </dd></dl>
 
@@ -609,23 +714,105 @@ noise and meaningful speech during audio processing.</p>
 <dt class="sig sig-object py" id="whisper_web.server.ClientSession">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">whisper_web.server.</span></span><span class="sig-name descname"><span class="pre">ClientSession</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">session_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_config</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#whisper_web.whisper_model.ModelConfig" title="whisper_web.whisper_model.ModelConfig"><span class="pre">ModelConfig</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/whisper_web/server.html#ClientSession"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.server.ClientSession" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
-<p>Represents a client session with its own transcription manager and model.</p>
+<p>Represents an isolated client transcription session with dedicated resources.</p>
+<p>Each ClientSession encapsulates a complete transcription pipeline for a single client,
+including its own event bus, transcription manager, and Whisper model instance. This
+design enables concurrent multi-client support with isolated state and configurations.</p>
+<p><strong>Session Components:</strong></p>
+<ul class="simple">
+<li><p><strong>Event Bus</strong>: Dedicated event system for inter-component communication</p></li>
+<li><p><strong>Transcription Manager</strong>: Handles audio queuing and transcription state</p></li>
+<li><p><strong>Whisper Model</strong>: Configured ASR model instance for speech recognition</p></li>
+<li><p><strong>Inference Task</strong>: Async task managing the transcription processing loop</p></li>
+<li><p><strong>Download Tracking</strong>: Monitors model download progress</p></li>
+</ul>
+<p><strong>Key Features:</strong></p>
+<ul class="simple">
+<li><p><strong>Isolation</strong>: Each session operates independently with separate state</p></li>
+<li><p><strong>Lifecycle Management</strong>: Handles session startup, operation, and cleanup</p></li>
+<li><p><strong>Event-Driven Architecture</strong>: Uses publish-subscribe pattern for loose coupling</p></li>
+<li><p><strong>Async Processing</strong>: Non-blocking inference execution with proper task management</p></li>
+<li><p><strong>Model Download Handling</strong>: Tracks and responds to model download events</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>session_id</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – Unique identifier for this client session</p></li>
+<li><p><strong>model_config</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">ModelConfig</span></code>) – Configuration for the Whisper model used in this session</p></li>
+</ul>
+</dd>
+<dt class="field-even">Variables<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>session_id</strong> – Unique session identifier</p></li>
+<li><p><strong>model_config</strong> – Whisper model configuration</p></li>
+<li><p><strong>event_bus</strong> – Session-specific event bus for component communication</p></li>
+<li><p><strong>manager</strong> – Transcription manager handling audio processing</p></li>
+<li><p><strong>model</strong> – Whisper model instance for speech recognition</p></li>
+<li><p><strong>inference_task</strong> – Async task running the inference loop</p></li>
+<li><p><strong>is_downloading</strong> – Flag indicating if model is currently downloading</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.server.ClientSession.handle_model_download">
 <em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">handle_model_download</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#whisper_web.events.DownloadModel" title="whisper_web.events.DownloadModel"><span class="pre">DownloadModel</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/whisper_web/server.html#ClientSession.handle_model_download"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.server.ClientSession.handle_model_download" title="Link to this definition"></a></dt>
-<dd><p>Handle model download event.</p>
+<dd><p>Handle model download progress events for this session.</p>
+<p>Updates the session’s download status based on model download events,
+allowing the session to track when models are being loaded and when
+they become available for inference.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>event</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">DownloadModel</span></code>) – Model download event containing URL and completion status</p>
+</dd>
+</dl>
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
+<li><p>Sets <cite>is_downloading</cite> to True when download starts</p></li>
+<li><p>Sets <cite>is_downloading</cite> to False when download completes</p></li>
+<li><p>Logs download status changes for monitoring</p></li>
+</ul>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.server.ClientSession.start_inference">
 <em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">start_inference</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/whisper_web/server.html#ClientSession.start_inference"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.server.ClientSession.start_inference" title="Link to this definition"></a></dt>
-<dd><p>Start the inference task for this client session.</p>
+<dd><p>Start the transcription inference task for this session.</p>
+<p>Creates and starts an async task that runs the main inference loop,
+processing audio chunks through the Whisper model. If an inference
+task is already running, this method has no effect.</p>
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
+<li><p>Creates new inference task if none exists or previous task completed</p></li>
+<li><p>Task runs indefinitely until manually stopped or session cleanup</p></li>
+<li><p>Uses the session’s transcription manager and model for processing</p></li>
+<li><p>Handles audio chunks from the session’s event bus</p></li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The inference task runs in the background and must be explicitly
+stopped using <cite>stop_inference()</cite> for proper cleanup.</p>
+</div>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.server.ClientSession.stop_inference">
 <em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">stop_inference</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/whisper_web/server.html#ClientSession.stop_inference"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.server.ClientSession.stop_inference" title="Link to this definition"></a></dt>
-<dd><p>Stop the inference task for this client session.</p>
+<dd><p>Stop the transcription inference task for this session.</p>
+<p>Gracefully cancels the running inference task and waits for proper
+cleanup. Handles cancellation exceptions to ensure clean shutdown
+without propagating cancellation errors.</p>
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
+<li><p>Cancels the inference task if currently running</p></li>
+<li><p>Waits for task cancellation to complete</p></li>
+<li><p>Suppresses CancelledError exceptions from task cleanup</p></li>
+<li><p>Safe to call multiple times or when no task is running</p></li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This method should be called during session cleanup to prevent
+resource leaks and ensure proper task termination.</p>
+</div>
 </dd></dl>
 
 </dd></dl>
@@ -923,8 +1110,8 @@ noise and meaningful speech during audio processing.</p>
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>default_model_config</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">ModelConfig</span></code>, optional) – Default configuration for the ASR model (e.g., Whisper), defaults to <code class="xref py py-class docutils literal notranslate"><span class="pre">ModelConfig()</span></code></p></li>
-<li><p><strong>host</strong> (<em>str</em><em>, </em><em>optional</em>) – Hostname for the FastAPI server, defaults to “localhost”</p></li>
-<li><p><strong>port</strong> (<em>int</em><em>, </em><em>optional</em>) – Port for the FastAPI server, defaults to 8000</p></li>
+<li><p><strong>host</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>, optional) – Hostname for the FastAPI server, defaults to “localhost”</p></li>
+<li><p><strong>port</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>, optional) – Port for the FastAPI server, defaults to 8000</p></li>
 </ul>
 </dd>
 </dl>
@@ -939,18 +1126,80 @@ and retrieving processing status per client.</p>
 <dt class="sig sig-object py" id="whisper_web.server.TranscriptionServer.cleanup_inactive_sessions">
 <em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cleanup_inactive_sessions</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/whisper_web/server.html#TranscriptionServer.cleanup_inactive_sessions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.server.TranscriptionServer.cleanup_inactive_sessions" title="Link to this definition"></a></dt>
 <dd><p>Remove sessions with failed or completed inference tasks.</p>
+<p>Performs maintenance by identifying and removing sessions whose inference
+tasks have finished or failed. This prevents accumulation of dead sessions
+and ensures system resources are properly reclaimed.</p>
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
+<li><p>Scans all active sessions for completed inference tasks</p></li>
+<li><p>Identifies sessions with failed tasks (exceptions)</p></li>
+<li><p>Marks failed/completed sessions for removal</p></li>
+<li><p>Removes inactive sessions and performs cleanup</p></li>
+<li><p>Logs cleanup activities for monitoring</p></li>
+</ul>
+<p><strong>Use Cases:</strong></p>
+<ul class="simple">
+<li><p>Periodic maintenance to clean up dead sessions</p></li>
+<li><p>Error recovery after inference failures</p></li>
+<li><p>Resource management in long-running deployments</p></li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This method should be called periodically or after detecting
+inference failures to maintain system health.</p>
+</div>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.server.TranscriptionServer.get_or_create_session">
 <span class="sig-name descname"><span class="pre">get_or_create_session</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">session_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_config</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#whisper_web.whisper_model.ModelConfig" title="whisper_web.whisper_model.ModelConfig"><span class="pre">ModelConfig</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#whisper_web.server.ClientSession" title="whisper_web.server.ClientSession"><span class="pre">ClientSession</span></a></span></span><a class="reference internal" href="_modules/whisper_web/server.html#TranscriptionServer.get_or_create_session"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.server.TranscriptionServer.get_or_create_session" title="Link to this definition"></a></dt>
-<dd><p>Get an existing session or create a new one.</p>
+<dd><p>Retrieve an existing session or create a new one with specified configuration.</p>
+<p>This method implements the session management logic, ensuring each client gets
+a dedicated session with isolated resources. If a session doesn’t exist, it
+creates a new one with the provided or default model configuration.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>session_id</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">Optional[str]</span></code>) – Unique identifier for the session. If None, generates UUID</p></li>
+<li><p><strong>model_config</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">Optional[ModelConfig]</span></code>) – Model configuration for new sessions. Uses default if None</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The existing or newly created client session</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#whisper_web.server.ClientSession" title="whisper_web.server.ClientSession"><code class="xref py py-class docutils literal notranslate"><span class="pre">ClientSession</span></code></a></p>
+</dd>
+</dl>
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
+<li><p>Generates UUID if no session_id provided</p></li>
+<li><p>Returns existing session if session_id already exists</p></li>
+<li><p>Creates new session with provided or default model configuration</p></li>
+<li><p>New sessions are immediately ready for inference</p></li>
+</ul>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.server.TranscriptionServer.remove_session">
 <em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">remove_session</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">session_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/whisper_web/server.html#TranscriptionServer.remove_session"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.server.TranscriptionServer.remove_session" title="Link to this definition"></a></dt>
-<dd><p>Remove a client session and stop its inference task.</p>
+<dd><p>Remove a client session and perform complete cleanup.</p>
+<p>Safely removes a session by stopping its inference task, cleaning up
+resources, and removing it from the active sessions dictionary. This
+method ensures proper resource cleanup to prevent memory leaks.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>session_id</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – Unique identifier of the session to remove</p>
+</dd>
+</dl>
+<p><strong>Behavior:</strong></p>
+<ul class="simple">
+<li><p>Stops the session’s inference task gracefully</p></li>
+<li><p>Removes session from active sessions dictionary</p></li>
+<li><p>Performs cleanup of session resources</p></li>
+<li><p>Logs removal for monitoring purposes</p></li>
+<li><p>Safe to call for non-existent sessions (no-op)</p></li>
+</ul>
 </dd></dl>
 
 <dl class="py method">
@@ -1086,11 +1335,105 @@ including the model size, device type, and other parameters related to the infer
 <dt class="sig sig-object py" id="whisper_web.whisper_model.WhisperModel">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">whisper_web.whisper_model.</span></span><span class="sig-name descname"><span class="pre">WhisperModel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#whisper_web.whisper_model.ModelConfig" title="whisper_web.whisper_model.ModelConfig"><span class="pre">ModelConfig</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">event_bus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#whisper_web.events.EventBus" title="whisper_web.events.EventBus"><span class="pre">EventBus</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/whisper_web/whisper_model.html#WhisperModel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.whisper_model.WhisperModel" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
-<p>Event-driven Whisper model with no direct dependencies.</p>
+<p>Event-driven Whisper ASR model wrapper with optimized inference capabilities.</p>
+<p>This class provides a high-level interface to OpenAI’s Whisper models (via Transformers)
+with event-driven architecture, device optimization, and asynchronous processing. It handles
+model loading, configuration, and transcription with automatic device selection and performance
+optimizations.</p>
+<p><strong>Core Features:</strong></p>
+<ul class="simple">
+<li><p><strong>Event-Driven Architecture</strong>: Publishes transcription results via event bus</p></li>
+<li><p><strong>Device Optimization</strong>: Automatic device selection with CUDA, MPS, and CPU support</p></li>
+<li><p><strong>Async Processing</strong>: Non-blocking transcription using thread pools</p></li>
+<li><p><strong>Model Flexibility</strong>: Supports various Whisper model sizes and custom model IDs</p></li>
+<li><p><strong>Performance Optimizations</strong>: Includes dtype optimization and CUDA acceleration</p></li>
+<li><p><strong>Distil-Whisper Integration</strong>: Optimized distilled models for faster inference</p></li>
+</ul>
+<p><strong>Supported Models:</strong></p>
+<ul class="simple">
+<li><p><strong>small</strong>: distil-whisper/distil-small.en (English only, fastest)</p></li>
+<li><p><strong>medium</strong>: distil-whisper/distil-medium.en (English only, balanced)</p></li>
+<li><p><strong>large-v3</strong>: distil-whisper/distil-large-v3 (Multilingual, most accurate)</p></li>
+<li><p><strong>Custom</strong>: Any HuggingFace Whisper-compatible model ID</p></li>
+</ul>
+<p><strong>Device Support:</strong></p>
+<ul class="simple">
+<li><p><strong>CUDA</strong>: GPU acceleration with float16 precision</p></li>
+<li><p><strong>MPS</strong>: Apple Silicon GPU acceleration</p></li>
+<li><p><strong>CPU</strong>: Fallback with float32 precision</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model_args</strong> (<a class="reference internal" href="#whisper_web.whisper_model.ModelConfig" title="whisper_web.whisper_model.ModelConfig"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelConfig</span></code></a>) – Configuration object specifying model and device settings</p></li>
+<li><p><strong>event_bus</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">EventBus</span></code>) – Event bus for publishing transcription results</p></li>
+</ul>
+</dd>
+<dt class="field-even">Variables<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>device</strong> – Torch device used for model inference</p></li>
+<li><p><strong>samplerate</strong> – Audio sample rate for processing</p></li>
+<li><p><strong>torch_dtype</strong> – Data type used for model computations</p></li>
+<li><p><strong>speech_model</strong> – Loaded Whisper model for conditional generation</p></li>
+<li><p><strong>processor</strong> – Whisper processor for audio preprocessing</p></li>
+</ul>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The model automatically handles device placement, dtype conversion, and
+publishes results through the event system for loose coupling.</p>
+</div>
 <dl class="py method">
 <dt class="sig sig-object py" id="whisper_web.whisper_model.WhisperModel.load_model">
 <span class="sig-name descname"><span class="pre">load_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/whisper_web/whisper_model.html#WhisperModel.load_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.whisper_model.WhisperModel.load_model" title="Link to this definition"></a></dt>
-<dd><p>Loads the Whisper ASR model based on the specified model size or model ID.</p>
+<dd><p>Load and initialize the Whisper ASR model with optimized configuration.</p>
+<p>This method handles the complete model loading process including model ID resolution,
+cache management, device placement, and performance optimizations. It supports both
+predefined model sizes and custom model IDs from HuggingFace.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model_size</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – Predefined model size (‘small’, ‘medium’, ‘large-v3’) or custom size</p></li>
+<li><p><strong>model_id</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">Optional[str]</span></code>) – Optional custom HuggingFace model ID. Overrides model_size if provided</p></li>
+</ul>
+</dd>
+</dl>
+<p><strong>Model ID Resolution:</strong></p>
+<ul class="simple">
+<li><p>If <cite>model_id</cite> is provided, uses it directly</p></li>
+<li><p>Otherwise, maps <cite>model_size</cite> to appropriate distil-whisper model:</p>
+<ul>
+<li><p>‘small’ → ‘distil-whisper/distil-small.en’</p></li>
+<li><p>‘medium’ → ‘distil-whisper/distil-medium.en’</p></li>
+<li><p>‘large-v3’ → ‘distil-whisper/distil-large-v3’</p></li>
+<li><p>‘large’ → ‘distil-whisper/distil-large-v3’ (legacy mapping)</p></li>
+</ul>
+</li>
+</ul>
+<p><strong>Optimizations Applied:</strong></p>
+<ul class="simple">
+<li><p>Automatic dtype selection (float16 for CUDA, float32 for CPU/MPS)</p></li>
+<li><p>Low CPU memory usage during loading</p></li>
+<li><p>SafeTensors format for improved security and performance</p></li>
+<li><p>Configurable cache directory via HF_HOME environment variable</p></li>
+</ul>
+<p><strong>Cache Management:</strong></p>
+<ul class="simple">
+<li><p>Uses HF_HOME environment variable if set</p></li>
+<li><p>Falls back to ‘./.models’ directory for local caching</p></li>
+<li><p>Enables offline usage after initial download</p></li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Model loading may take time on first use due to download requirements.
+Subsequent loads use cached models for faster initialization.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Ensure sufficient disk space for model caching. Large models can
+require several GB of storage space.</p>
+</div>
 </dd></dl>
 
 </dd></dl>

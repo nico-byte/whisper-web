@@ -6,10 +6,10 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Introduction &mdash; Whisper RT 1.0.0 documentation</title>
+  <title>Introduction &mdash; Whisper Web 1.0.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
-      <link rel="stylesheet" type="text/css" href="_static/autodoc_pydantic.css" />
+      <link rel="stylesheet" type="text/css" href="_static/autodoc_pydantic.css?v=a0a71c94" />
       <link rel="stylesheet" type="text/css" href="_static/theme_overrides.css" />
 
   
@@ -34,7 +34,7 @@
           
           
           <a href="index.html" class="icon icon-home">
-            Whisper RT
+            Whisper Web
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
@@ -47,8 +47,14 @@
               <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Introduction</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#what-is-whisper-rt">What is Whisper RT?</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#what-is-whisper-web">What is Whisper Web?</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#key-features">Key Features</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#architectural-overview">Architectural Overview</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#system-architecture">System Architecture</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#execution-flow-chart">Execution Flow Chart</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pckage-overview">Pckage Overview</a></li>
 </ul>
 </li>
 </ul>
@@ -68,7 +74,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="index.html">Whisper RT</a>
+          <a href="index.html">Whisper Web</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -88,21 +94,19 @@
              
   <section id="introduction">
 <h1>Introduction<a class="headerlink" href="#introduction" title="Link to this heading"></a></h1>
-<section id="what-is-whisper-rt">
-<h2>What is Whisper RT?<a class="headerlink" href="#what-is-whisper-rt" title="Link to this heading"></a></h2>
-<p>Whisper RT is a Python-based real-time speech-to-text transcription system powered by
+<section id="what-is-whisper-web">
+<h2>What is Whisper Web?<a class="headerlink" href="#what-is-whisper-web" title="Link to this heading"></a></h2>
+<p>The Whisper Web Transcription Server is a Python-based real-time speech-to-text transcription system powered by
 OpenAI’s Whisper models. It leverages state-of-the-art models like Distil-Whisper to transcribe audio input
-in real-time, enabling applications in transcription, subtitling, and voice-driven interfaces.</p>
+in real-time.</p>
 <section id="key-features">
 <h3>Key Features<a class="headerlink" href="#key-features" title="Link to this heading"></a></h3>
 <ul class="simple">
 <li><p>Real-time Transcription: Transcribes spoken words into text almost instantaneously, making it ideal
-for use cases like live captioning, real-time subtitles, or interactive voice-driven applications.</p></li>
+for use cases like live captioning or interactive voice-driven applications.</p></li>
 <li><p>Customizable Model Configurations: The system can be fine-tuned with various model configurations
 to accommodate different use cases, such as adjusting the sampling rate, block size, or selecting
 from different Whisper model sizes.</p></li>
-<li><p>Voice Activity Detection (VAD): Supports voice activity detection (VAD) to filter out silence,
-ensuring that transcription only occurs when speech is detected.</p></li>
 <li><p>API Integration: Exposes a RESTful API for easy integration with other services. You can send and
 retrieve transcriptions via HTTP requests, allowing for real-time updates in web or mobile apps.</p></li>
 <li><p>Multi-threaded Asynchronous Processing: Leverages asynchronous programming (via asyncio) for optimal
@@ -111,6 +115,42 @@ transcription results concurrently.</p></li>
 <li><p>Memory-Efficient and Scalable: Designed to work efficiently even with resource-intensive models,
 offering scalable transcription performance with lower resource consumption.</p></li>
 </ul>
+</section>
+</section>
+<section id="architectural-overview">
+<h2>Architectural Overview<a class="headerlink" href="#architectural-overview" title="Link to this heading"></a></h2>
+<p>The Whisper Web system follows an event-driven, microservice-oriented architecture that enables
+real-time audio processing and transcription. The system is designed with loose coupling between
+components, allowing for scalability and maintainability.</p>
+<section id="system-architecture">
+<h3>System Architecture<a class="headerlink" href="#system-architecture" title="Link to this heading"></a></h3>
+<figure class="align-center" id="id1">
+<a class="reference internal image-reference" href="_images/classes_whisper-web.png"><img alt="Whisper Web System Architecture Overview" src="_images/classes_whisper-web.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">High-level view of the main components and their interactions</span><a class="headerlink" href="#id1" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</section>
+<section id="execution-flow-chart">
+<h3>Execution Flow Chart<a class="headerlink" href="#execution-flow-chart" title="Link to this heading"></a></h3>
+<figure class="align-center" id="id2">
+<a class="reference internal image-reference" href="_images/whisper_web_flow.png"><img alt="Whisper Web Execution Flow Chart" src="_images/whisper_web_flow.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Detailed execution flow of the transcription process</span><a class="headerlink" href="#id2" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</section>
+<section id="pckage-overview">
+<h3>Pckage Overview<a class="headerlink" href="#pckage-overview" title="Link to this heading"></a></h3>
+<figure class="align-center" id="id3">
+<a class="reference internal image-reference" href="_images/packages_whisper-web.png"><img alt="Whisper Web Execution Flow Chart" src="_images/packages_whisper-web.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Package structure overview showing the main components and their relationships</span><a class="headerlink" href="#id3" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 </section>
 </section>
 </section>

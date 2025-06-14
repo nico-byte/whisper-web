@@ -15,16 +15,18 @@ Server & API
 
 .. automodule:: whisper_web.server
    :members:
+   :private-members:
    :undoc-members:
    :show-inheritance:
 
 The main FastAPI server that provides RESTful endpoints and WebSocket connections for real-time transcription services. Handles session management, audio streaming, and transcription delivery.
 
-Transcription Management
+Transcription and Audio Management
 ------------------------
 
 .. automodule:: whisper_web.management
    :members:
+   :private-members:
    :undoc-members:
    :show-inheritance:
 
@@ -33,7 +35,7 @@ Event-driven transcription manager that coordinates the entire transcription pip
 Speech Recognition
 ==================
 
-Whisper Model Interface
+Whisper Model
 -----------------------
 
 .. automodule:: whisper_web.whisper_model
