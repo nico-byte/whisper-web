@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join("..", "..")))
 
-project = "Whisper RT"
+project = "Whisper Web"
 copyright = "2025, Nico Fuchs & Matthias Laton"
 author = "Nico Fuchs & Matthias Laton"
 release = "1.0.0"

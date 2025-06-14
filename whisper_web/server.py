@@ -116,7 +116,48 @@ class SessionOperationResponse(BaseModel):
 
 
 class ClientSession:
-    """Represents a client session with its own transcription manager and model."""
+    """Represents an isolated client transcription session with dedicated resources.
+
+    Each ClientSession encapsulates a complete transcription pipeline for a single client,
+    including its own event bus, transcription manager, and Whisper model instance. This
+    design enables concurrent multi-client support with isolated state and configurations.
+
+    **Session Components:**
+
+    - **Event Bus**: Dedicated event system for inter-component communication
+    - **Transcription Manager**: Handles audio queuing and transcription state
+    - **Whisper Model**: Configured ASR model instance for speech recognition
+    - **Inference Task**: Async task managing the transcription processing loop
+    - **Download Tracking**: Monitors model download progress
+
+    **Key Features:**
+
+    - **Isolation**: Each session operates independently with separate state
+    - **Lifecycle Management**: Handles session startup, operation, and cleanup
+    - **Event-Driven Architecture**: Uses publish-subscribe pattern for loose coupling
+    - **Async Processing**: Non-blocking inference execution with proper task management
+    - **Model Download Handling**: Tracks and responds to model download events
+
+    :param session_id: Unique identifier for this client session
+    :type session_id: :class:`str`
+    :param model_config: Configuration for the Whisper model used in this session
+    :type model_config: :class:`ModelConfig`
+
+    :ivar session_id: Unique session identifier
+    :type session_id: :class:`str`
+    :ivar model_config: Whisper model configuration
+    :type model_config: :class:`ModelConfig`
+    :ivar event_bus: Session-specific event bus for component communication
+    :type event_bus: :class:`EventBus`
+    :ivar manager: Transcription manager handling audio processing
+    :type manager: :class:`TranscriptionManager`
+    :ivar model: Whisper model instance for speech recognition
+    :type model: :class:`WhisperModel`
+    :ivar inference_task: Async task running the inference loop
+    :type inference_task: :class:`Optional[asyncio.Task]`
+    :ivar is_downloading: Flag indicating if model is currently downloading
+    :type is_downloading: :class:`bool`
+    """
 
     def __init__(self, session_id: str, model_config: ModelConfig):
         self.session_id = session_id
@@ -130,12 +171,44 @@ class ClientSession:
         self.event_bus.subscribe(DownloadModel, self.handle_model_download)  # type: ignore
 
     async def start_inference(self):
-        """Start the inference task for this client session."""
+        """Start the transcription inference task for this session.
+
+        Creates and starts an async task that runs the main inference loop,
+        processing audio chunks through the Whisper model. If an inference
+        task is already running, this method has no effect.
+
+        **Behavior:**
+
+        - Creates new inference task if none exists or previous task completed
+        - Task runs indefinitely until manually stopped or session cleanup
+        - Uses the session's transcription manager and model for processing
+        - Handles audio chunks from the session's event bus
+
+        .. note::
+            The inference task runs in the background and must be explicitly
+            stopped using `stop_inference()` for proper cleanup.
+        """
         if self.inference_task is None or self.inference_task.done():
             self.inference_task = asyncio.create_task(self.manager.run_inference(self.model))
 
     async def stop_inference(self):
-        """Stop the inference task for this client session."""
+        """Stop the transcription inference task for this session.
+
+        Gracefully cancels the running inference task and waits for proper
+        cleanup. Handles cancellation exceptions to ensure clean shutdown
+        without propagating cancellation errors.
+
+        **Behavior:**
+
+        - Cancels the inference task if currently running
+        - Waits for task cancellation to complete
+        - Suppresses CancelledError exceptions from task cleanup
+        - Safe to call multiple times or when no task is running
+
+        .. note::
+            This method should be called during session cleanup to prevent
+            resource leaks and ensure proper task termination.
+        """
         if self.inference_task and not self.inference_task.done():
             self.inference_task.cancel()
             try:
@@ -144,7 +217,21 @@ class ClientSession:
                 pass
 
     async def handle_model_download(self, event: DownloadModel):
-        """Handle model download event."""
+        """Handle model download progress events for this session.
+
+        Updates the session's download status based on model download events,
+        allowing the session to track when models are being loaded and when
+        they become available for inference.
+
+        :param event: Model download event containing URL and completion status
+        :type event: :class:`DownloadModel`
+
+        **Behavior:**
+
+        - Sets `is_downloading` to True when download starts
+        - Sets `is_downloading` to False when download completes
+        - Logs download status changes for monitoring
+        """
         self.is_downloading = not event.is_finished
         print(f"Model download {'started' if not event.is_finished else 'finished'} for session {self.session_id}")
 
@@ -164,9 +251,9 @@ class TranscriptionServer:
     :param default_model_config: Default configuration for the ASR model (e.g., Whisper), defaults to :class:`ModelConfig()`
     :type default_model_config: :class:`ModelConfig`, optional
     :param host: Hostname for the FastAPI server, defaults to "localhost"
-    :type host: str, optional
+    :type host: :class:`str`, optional
     :param port: Port for the FastAPI server, defaults to 8000
-    :type port: int, optional
+    :type port: :class:`int`, optional
 
     .. note::
         Each client connection creates its own isolated session with a dedicated TranscriptionManager and WhisperModel.
@@ -194,7 +281,26 @@ class TranscriptionServer:
         self._setup_api_routes()
 
     def get_or_create_session(self, session_id: Optional[str] = None, model_config: Optional[ModelConfig] = None) -> ClientSession:
-        """Get an existing session or create a new one."""
+        """Retrieve an existing session or create a new one with specified configuration.
+
+        This method implements the session management logic, ensuring each client gets
+        a dedicated session with isolated resources. If a session doesn't exist, it
+        creates a new one with the provided or default model configuration.
+
+        :param session_id: Unique identifier for the session. If None, generates UUID
+        :type session_id: :class:`Optional[str]`
+        :param model_config: Model configuration for new sessions. Uses default if None
+        :type model_config: :class:`Optional[ModelConfig]`
+        :return: The existing or newly created client session
+        :rtype: :class:`ClientSession`
+
+        **Behavior:**
+
+        - Generates UUID if no session_id provided
+        - Returns existing session if session_id already exists
+        - Creates new session with provided or default model configuration
+        - New sessions are immediately ready for inference
+        """
         if session_id is None:
             session_id = str(uuid.uuid4())
 
@@ -205,7 +311,23 @@ class TranscriptionServer:
         return self.client_sessions[session_id]
 
     async def remove_session(self, session_id: str):
-        """Remove a client session and stop its inference task."""
+        """Remove a client session and perform complete cleanup.
+
+        Safely removes a session by stopping its inference task, cleaning up
+        resources, and removing it from the active sessions dictionary. This
+        method ensures proper resource cleanup to prevent memory leaks.
+
+        :param session_id: Unique identifier of the session to remove
+        :type session_id: :class:`str`
+
+        **Behavior:**
+
+        - Stops the session's inference task gracefully
+        - Removes session from active sessions dictionary
+        - Performs cleanup of session resources
+        - Logs removal for monitoring purposes
+        - Safe to call for non-existent sessions (no-op)
+        """
         if session_id in self.client_sessions:
             session = self.client_sessions[session_id]
             await session.stop_inference()
@@ -213,7 +335,30 @@ class TranscriptionServer:
             print(f"Session {session_id} removed and cleaned up")
 
     async def cleanup_inactive_sessions(self):
-        """Remove sessions with failed or completed inference tasks."""
+        """Remove sessions with failed or completed inference tasks.
+
+        Performs maintenance by identifying and removing sessions whose inference
+        tasks have finished or failed. This prevents accumulation of dead sessions
+        and ensures system resources are properly reclaimed.
+
+        **Behavior:**
+
+        - Scans all active sessions for completed inference tasks
+        - Identifies sessions with failed tasks (exceptions)
+        - Marks failed/completed sessions for removal
+        - Removes inactive sessions and performs cleanup
+        - Logs cleanup activities for monitoring
+
+        **Use Cases:**
+
+        - Periodic maintenance to clean up dead sessions
+        - Error recovery after inference failures
+        - Resource management in long-running deployments
+
+        .. note::
+            This method should be called periodically or after detecting
+            inference failures to maintain system health.
+        """
         inactive_sessions = []
         for session_id, session in self.client_sessions.items():
             if session.inference_task and session.inference_task.done():
@@ -225,6 +370,45 @@ class TranscriptionServer:
             await self.remove_session(session_id)
 
     def _setup_ws_route(self):
+        """Configure WebSocket route for real-time audio streaming and transcription.
+
+        Sets up the primary WebSocket endpoint that handles real-time audio streaming
+        from clients. This endpoint manages the complete audio-to-transcription pipeline
+        including session management, audio processing, and connection lifecycle.
+
+        **WebSocket Protocol:**
+
+        - **Endpoint**: `/ws/transcribe/{session_id}`
+        - **Binary Protocol**: First byte indicates finality flag, remaining bytes contain WAV audio data
+        - **Session Management**: Automatically creates or retrieves existing sessions
+        - **Real-time Processing**: Streams audio directly to transcription pipeline
+
+        **Connection Lifecycle:**
+
+        1. **Connection**: Accept WebSocket connection for specified session
+        2. **Session Setup**: Get or create session with default configuration
+        3. **Inference Start**: Begin transcription processing for the session
+        4. **Audio Streaming**: Continuously receive and process audio chunks
+        5. **Cleanup**: Handle disconnections and errors gracefully
+
+        **Audio Processing:**
+
+        - Receives binary audio data in WAV format
+        - Extracts finality flag from protocol header
+        - Converts audio to tensor format for processing
+        - Publishes audio events to session event bus
+        - Maintains real-time processing capabilities
+
+        **Error Handling:**
+
+        - Graceful WebSocket disconnection handling
+        - Exception logging without service interruption
+        - Automatic session cleanup on connection loss
+
+        .. note::
+            This WebSocket endpoint is the primary interface for real-time
+            transcription and supports the binary protocol expected by clients.
+        """
         @self.app.websocket("/ws/transcribe/{session_id}")
         async def websocket_endpoint_with_session(websocket: WebSocket, session_id: str):
             await websocket.accept()
@@ -264,17 +448,57 @@ class TranscriptionServer:
                 print(f"Error in WebSocket for session {session.session_id}: {e}")
 
     def _setup_api_routes(self):
-        """
-        Sets up the routes for the FastAPI application.
+        """Configure all HTTP API routes for the FastAPI application.
 
-        This method defines several HTTP endpoints that allow clients to interact with their transcription sessions.
-        Routes are organized into session management, transcription access, and legacy compatibility endpoints.
+        This method organizes and sets up the complete REST API interface for the
+        transcription server. Routes are grouped by functionality to provide a
+        comprehensive API for session management and transcription access.
+
+        **Route Categories:**
+
+        - **Session Management**: Create, delete, list, and manage sessions
+        - **Transcription Access**: Retrieve current, final, and historical transcriptions
+        - **Queue Monitoring**: Monitor audio processing queues and statistics
+
+        **API Design:**
+
+        - RESTful design with resource-based URLs
+        - Consistent response schemas across endpoints
+        - Proper HTTP status codes and error handling
+        - Session-scoped operations for multi-client support
+
+        .. note::
+            Routes are automatically registered with the FastAPI application
+            and include OpenAPI documentation for interactive API exploration.
         """
         self._setup_session_management_routes()
         self._setup_transcription_routes()
 
     def _setup_session_management_routes(self):
-        """Setup routes for session creation, deletion, and management."""
+        """Configure HTTP routes for session lifecycle management.
+
+        Sets up endpoints that handle the complete session lifecycle including
+        creation, deletion, status monitoring, and operational controls. These
+        routes provide the foundation for multi-client session management.
+
+        **Endpoints Configured:**
+
+        - `POST /sessions` - Create new session with optional configuration
+        - `POST /sessions/{session_id}` - Create session with specific ID
+        - `DELETE /sessions/{session_id}` - Remove session and cleanup resources
+        - `GET /sessions` - List all active sessions with statistics
+        - `GET /sessions/{session_id}/status` - Get detailed session status
+        - `POST /sessions/{session_id}/clear` - Clear session transcription history
+        - `POST /sessions/{session_id}/restart` - Restart session inference
+
+        **Features:**
+
+        - Model configuration per session
+        - Session existence validation
+        - Graceful resource cleanup
+        - Comprehensive status reporting
+        - Operational controls for session management
+        """
 
         @self.app.post("/sessions", summary="Create a new transcription session", response_model=SessionResponse)
         async def create_session(model_config: Optional[ModelConfig] = None, session_id: Optional[str] = None) -> SessionResponse:
@@ -362,7 +586,31 @@ class TranscriptionServer:
             )
 
     def _setup_transcription_routes(self):
-        """Setup routes for accessing transcription data and controlling sessions."""
+        """Configure HTTP routes for transcription data access and queue management.
+
+        Sets up endpoints that provide access to transcription results, real-time
+        status monitoring, and audio queue management. These routes enable clients
+        to retrieve transcription data and monitor processing progress.
+
+        **Transcription Data Endpoints:**
+
+        - `GET /sessions/{session_id}/transcriptions` - Get all completed transcriptions
+        - `GET /sessions/{session_id}/transcription/current` - Get current active transcription
+        - `GET /sessions/{session_id}/transcription/final` - Get complete final transcription
+
+        **Queue Management Endpoints:**
+
+        - `GET /sessions/{session_id}/queue/size` - Get current audio queue size
+        - `GET /sessions/{session_id}/queue/processed` - Get processed chunk count
+        - `POST /sessions/{session_id}/queue/clear` - Clear pending audio chunks
+
+        **Features:**
+
+        - Real-time transcription access
+        - Processing progress monitoring
+        - Queue management and clearing
+        - Session-scoped data isolation
+        """
 
         @self.app.get(
             "/sessions/{session_id}/transcriptions", summary="Get all transcriptions for a session", response_model=TranscriptionsResponse
@@ -422,16 +670,6 @@ class TranscriptionServer:
             session = self.client_sessions[session_id]
             session.manager.clear_audio_queue()
             return MessageResponse(session_id=session_id, message="Audio queue cleared successfully")
-
-        @self.app.post("/clear", summary="Clear transcriptions (legacy)", response_model=MessageResponse)
-        async def clear_legacy() -> MessageResponse:
-            session = self.get_or_create_session("default")
-
-            # Clear transcription data
-            session.manager.transcriptions.clear()
-            session.manager.current_transcription = ""
-
-            return MessageResponse(message="Transcriptions cleared successfully")
 
     def run(self):
         """Starts the FastAPI application in a separate thread.

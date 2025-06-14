@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-"""
-Example server startup script demonstrating the refactored multi-client, multi-model TranscriptionServer.
-
-This script shows how to:
-1. Configure and start the server with default model settings
-2. Handle multiple clients with different model configurations
-3. Monitor and manage sessions
-"""
-
 import asyncio
 import signal
 import sys
