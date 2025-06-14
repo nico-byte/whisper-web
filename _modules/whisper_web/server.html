@@ -1,0 +1,627 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>whisper_web.server &mdash; Whisper RT 1.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/autodoc_pydantic.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/theme_overrides.css" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=8d563738"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            Whisper RT
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">Whisper Web API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html#core-components">Core Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html#speech-recognition">Speech Recognition</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html#audio-processing">Audio Processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html#event-system">Event System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html#data-types-utilities">Data Types &amp; Utilities</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Whisper RT</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">whisper_web.server</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for whisper_web.server</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">fastapi</span><span class="w"> </span><span class="kn">import</span> <span class="n">FastAPI</span><span class="p">,</span> <span class="n">WebSocket</span><span class="p">,</span> <span class="n">WebSocketDisconnect</span><span class="p">,</span> <span class="n">HTTPException</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uvicorn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torchaudio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span><span class="p">,</span> <span class="n">Field</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.whisper_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModelConfig</span><span class="p">,</span> <span class="n">WhisperModel</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.management</span><span class="w"> </span><span class="kn">import</span> <span class="n">TranscriptionManager</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.events</span><span class="w"> </span><span class="kn">import</span> <span class="n">EventBus</span><span class="p">,</span> <span class="n">AudioChunkReceived</span><span class="p">,</span> <span class="n">DownloadModel</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">AudioChunk</span>
+
+
+<span class="c1"># Constants</span>
+<span class="n">SESSION_NOT_FOUND_MSG</span> <span class="o">=</span> <span class="s2">&quot;Session not found&quot;</span>
+
+
+<span class="c1"># API Schemas</span>
+<div class="viewcode-block" id="CreateSessionRequest">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.CreateSessionRequest">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CreateSessionRequest</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Request schema for creating a new session.&quot;&quot;&quot;</span>
+
+    <span class="n">model_configuration</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ModelConfig</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Model configuration for the session&quot;</span><span class="p">)</span>
+    <span class="n">session_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Optional custom session ID&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SessionResponse">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.SessionResponse">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SessionResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Response schema for session creation.&quot;&quot;&quot;</span>
+
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Unique session identifier&quot;</span><span class="p">)</span>
+    <span class="n">model_configuration</span><span class="p">:</span> <span class="n">Dict</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Model configuration used for the session&quot;</span><span class="p">)</span>
+    <span class="n">message</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Optional message (e.g., for existing sessions)&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SessionInfo">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.SessionInfo">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SessionInfo</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Schema for session information in list responses.&quot;&quot;&quot;</span>
+
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Unique session identifier&quot;</span><span class="p">)</span>
+    <span class="n">model_configuration</span><span class="p">:</span> <span class="n">Dict</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Model configuration&quot;</span><span class="p">)</span>
+    <span class="n">inference_running</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Whether inference is currently running&quot;</span><span class="p">)</span>
+    <span class="n">transcription_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Number of completed transcriptions&quot;</span><span class="p">)</span>
+    <span class="n">current_transcription</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Current transcription text&quot;</span><span class="p">)</span>
+    <span class="n">audio_queue_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Number of audio chunks in queue&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SessionListResponse">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.SessionListResponse">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SessionListResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Response schema for listing sessions.&quot;&quot;&quot;</span>
+
+    <span class="n">sessions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SessionInfo</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;List of active sessions&quot;</span><span class="p">)</span>
+    <span class="n">total_sessions</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Total number of active sessions&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SessionStatusResponse">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.SessionStatusResponse">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SessionStatusResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Response schema for session status.&quot;&quot;&quot;</span>
+
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Session identifier&quot;</span><span class="p">)</span>
+    <span class="n">is_downloading</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Whether model is currently downloading&quot;</span><span class="p">)</span>
+    <span class="n">inference_running</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Whether inference is currently running&quot;</span><span class="p">)</span>
+    <span class="n">audio_queue_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Number of audio chunks in queue&quot;</span><span class="p">)</span>
+    <span class="n">audio_queue_processed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Number of audio chunks processed&quot;</span><span class="p">)</span>
+    <span class="n">transcription_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Number of completed transcriptions&quot;</span><span class="p">)</span>
+    <span class="n">model_configuration</span><span class="p">:</span> <span class="n">Dict</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Model configuration&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="TranscriptionsResponse">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.TranscriptionsResponse">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TranscriptionsResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Response schema for getting all transcriptions.&quot;&quot;&quot;</span>
+
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Session identifier&quot;</span><span class="p">)</span>
+    <span class="n">transcriptions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;List of all transcriptions&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="CurrentTranscriptionResponse">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.CurrentTranscriptionResponse">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CurrentTranscriptionResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Response schema for current transcription.&quot;&quot;&quot;</span>
+
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Session identifier&quot;</span><span class="p">)</span>
+    <span class="n">current_transcription</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Current transcription text&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="FinalTranscriptionResponse">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.FinalTranscriptionResponse">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FinalTranscriptionResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Response schema for final transcription.&quot;&quot;&quot;</span>
+
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Session identifier&quot;</span><span class="p">)</span>
+    <span class="n">final_transcription</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Final transcription text&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="QueueSizeResponse">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.QueueSizeResponse">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">QueueSizeResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Response schema for audio queue size.&quot;&quot;&quot;</span>
+
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Session identifier&quot;</span><span class="p">)</span>
+    <span class="n">audio_queue_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Number of audio chunks in queue&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="QueueProcessedResponse">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.QueueProcessedResponse">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">QueueProcessedResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Response schema for processed queue items.&quot;&quot;&quot;</span>
+
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Session identifier&quot;</span><span class="p">)</span>
+    <span class="n">audio_queue_processed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Number of audio chunks processed&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MessageResponse">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.MessageResponse">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MessageResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generic response schema for operations with messages.&quot;&quot;&quot;</span>
+
+    <span class="n">message</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Operation result message&quot;</span><span class="p">)</span>
+    <span class="n">session_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Session identifier&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SessionOperationResponse">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.SessionOperationResponse">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SessionOperationResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Response schema for session operations like restart.&quot;&quot;&quot;</span>
+
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Session identifier&quot;</span><span class="p">)</span>
+    <span class="n">message</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Operation result message&quot;</span><span class="p">)</span>
+    <span class="n">inference_running</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Whether inference is running after operation&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ClientSession">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.ClientSession">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ClientSession</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Represents a client session with its own transcription manager and model.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">model_config</span><span class="p">:</span> <span class="n">ModelConfig</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">session_id</span> <span class="o">=</span> <span class="n">session_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model_config</span> <span class="o">=</span> <span class="n">model_config</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">event_bus</span> <span class="o">=</span> <span class="n">EventBus</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">manager</span> <span class="o">=</span> <span class="n">TranscriptionManager</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">event_bus</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">WhisperModel</span><span class="p">(</span><span class="n">model_config</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_bus</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inference_task</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">asyncio</span><span class="o">.</span><span class="n">Task</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_downloading</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">event_bus</span><span class="o">.</span><span class="n">subscribe</span><span class="p">(</span><span class="n">DownloadModel</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle_model_download</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+
+<div class="viewcode-block" id="ClientSession.start_inference">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.ClientSession.start_inference">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">start_inference</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Start the inference task for this client session.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">inference_task</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">inference_task</span><span class="o">.</span><span class="n">done</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">inference_task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">run_inference</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="ClientSession.stop_inference">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.ClientSession.stop_inference">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">stop_inference</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stop the inference task for this client session.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">inference_task</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">inference_task</span><span class="o">.</span><span class="n">done</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">inference_task</span><span class="o">.</span><span class="n">cancel</span><span class="p">()</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">inference_task</span>
+            <span class="k">except</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">CancelledError</span><span class="p">:</span>
+                <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="ClientSession.handle_model_download">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.ClientSession.handle_model_download">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">handle_model_download</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">DownloadModel</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle model download event.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_downloading</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">event</span><span class="o">.</span><span class="n">is_finished</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model download </span><span class="si">{</span><span class="s1">&#39;started&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="n">event</span><span class="o">.</span><span class="n">is_finished</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;finished&#39;</span><span class="si">}</span><span class="s2"> for session </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">session_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="TranscriptionServer">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.TranscriptionServer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TranscriptionServer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A real-time speech transcription API server built with FastAPI.</span>
+
+<span class="sd">    This service provides a full audio transcription pipeline via HTTP and WebSocket endpoints, including:</span>
+
+<span class="sd">    - Audio stream ingestion per client.</span>
+<span class="sd">    - Real-time automatic speech recognition (ASR) using configurable Whisper models.</span>
+<span class="sd">    - Voice Activity Detection (VAD) to detect speech regions.</span>
+<span class="sd">    - Status monitoring of transcription, generation, and voice activity per client.</span>
+<span class="sd">    - Retrieval and posting of transcription data per client.</span>
+<span class="sd">    - Multi-client support with isolated sessions.</span>
+
+<span class="sd">    :param default_model_config: Default configuration for the ASR model (e.g., Whisper), defaults to :class:`ModelConfig()`</span>
+<span class="sd">    :type default_model_config: :class:`ModelConfig`, optional</span>
+<span class="sd">    :param host: Hostname for the FastAPI server, defaults to &quot;localhost&quot;</span>
+<span class="sd">    :type host: str, optional</span>
+<span class="sd">    :param port: Port for the FastAPI server, defaults to 8000</span>
+<span class="sd">    :type port: int, optional</span>
+
+<span class="sd">    .. note::</span>
+<span class="sd">        Each client connection creates its own isolated session with a dedicated TranscriptionManager and WhisperModel.</span>
+<span class="sd">        This allows multiple clients to use different model configurations and have separate transcription states.</span>
+
+<span class="sd">        The server exposes endpoints for creating sessions, managing transcriptions per session,</span>
+<span class="sd">        and retrieving processing status per client.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">default_model_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ModelConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">host</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;0.0.0.0&quot;</span><span class="p">,</span>
+        <span class="n">port</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8000</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_default_model_config</span> <span class="o">=</span> <span class="n">default_model_config</span> <span class="ow">or</span> <span class="n">ModelConfig</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">host</span> <span class="o">=</span> <span class="n">host</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">port</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">app</span> <span class="o">=</span> <span class="n">FastAPI</span><span class="p">()</span>
+
+        <span class="c1"># Dictionary to store client sessions</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ClientSession</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_setup_ws_route</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_setup_api_routes</span><span class="p">()</span>
+
+<div class="viewcode-block" id="TranscriptionServer.get_or_create_session">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.TranscriptionServer.get_or_create_session">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_or_create_session</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">session_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">model_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ModelConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ClientSession</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get an existing session or create a new one.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">session_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">session_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">())</span>
+
+        <span class="k">if</span> <span class="n">session_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+            <span class="n">config</span> <span class="o">=</span> <span class="n">model_config</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_default_model_config</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">ClientSession</span><span class="p">(</span><span class="n">session_id</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="TranscriptionServer.remove_session">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.TranscriptionServer.remove_session">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">remove_session</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove a client session and stop its inference task.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">session_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+            <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">stop_inference</span><span class="p">()</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Session </span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2"> removed and cleaned up&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="TranscriptionServer.cleanup_inactive_sessions">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.TranscriptionServer.cleanup_inactive_sessions">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">cleanup_inactive_sessions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove sessions with failed or completed inference tasks.&quot;&quot;&quot;</span>
+        <span class="n">inactive_sessions</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">session_id</span><span class="p">,</span> <span class="n">session</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">session</span><span class="o">.</span><span class="n">inference_task</span> <span class="ow">and</span> <span class="n">session</span><span class="o">.</span><span class="n">inference_task</span><span class="o">.</span><span class="n">done</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">session</span><span class="o">.</span><span class="n">inference_task</span><span class="o">.</span><span class="n">exception</span><span class="p">():</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Session </span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2"> has failed inference task, marking for cleanup&quot;</span><span class="p">)</span>
+                    <span class="n">inactive_sessions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">session_id</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">session_id</span> <span class="ow">in</span> <span class="n">inactive_sessions</span><span class="p">:</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_session</span><span class="p">(</span><span class="n">session_id</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_setup_ws_route</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">websocket</span><span class="p">(</span><span class="s2">&quot;/ws/transcribe/</span><span class="si">{session_id}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">websocket_endpoint_with_session</span><span class="p">(</span><span class="n">websocket</span><span class="p">:</span> <span class="n">WebSocket</span><span class="p">,</span> <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">accept</span><span class="p">()</span>
+
+            <span class="c1"># Get or create session</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_or_create_session</span><span class="p">(</span><span class="n">session_id</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;WebSocket connection accepted for session: </span><span class="si">{</span><span class="n">session</span><span class="o">.</span><span class="n">session_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Start inference task for this session</span>
+            <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">start_inference</span><span class="p">()</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                    <span class="n">message_bytes</span> <span class="o">=</span> <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">receive_bytes</span><span class="p">()</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Received </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">message_bytes</span><span class="p">)</span><span class="si">}</span><span class="s2"> bytes from session </span><span class="si">{</span><span class="n">session</span><span class="o">.</span><span class="n">session_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+                    <span class="c1"># Unpack the binary protocol: first byte is is_final flag</span>
+                    <span class="n">is_final</span> <span class="o">=</span> <span class="n">message_bytes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span>  <span class="c1"># First byte indicates if final</span>
+                    <span class="n">wav_bytes</span> <span class="o">=</span> <span class="n">message_bytes</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>  <span class="c1"># Rest is WAV data</span>
+
+                    <span class="n">audio_buffer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">wav_bytes</span><span class="p">)</span>
+                    <span class="n">waveform</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torchaudio</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">audio_buffer</span><span class="p">)</span>
+                    <span class="n">waveform</span> <span class="o">=</span> <span class="n">waveform</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+                    <span class="n">audio_chunk</span> <span class="o">=</span> <span class="n">AudioChunk</span><span class="p">(</span>
+                        <span class="n">data</span><span class="o">=</span><span class="n">waveform</span><span class="p">,</span>
+                        <span class="n">timestamp</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(),</span>  <span class="c1"># Use current time as timestamp</span>
+                    <span class="p">)</span>
+
+                    <span class="c1"># Append audio tensor to the session&#39;s queue</span>
+                    <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">event_bus</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">AudioChunkReceived</span><span class="p">(</span><span class="n">chunk</span><span class="o">=</span><span class="n">audio_chunk</span><span class="p">,</span> <span class="n">is_final</span><span class="o">=</span><span class="n">is_final</span><span class="p">))</span>
+
+            <span class="k">except</span> <span class="n">WebSocketDisconnect</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;WebSocket disconnected for session: </span><span class="si">{</span><span class="n">session</span><span class="o">.</span><span class="n">session_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error in WebSocket for session </span><span class="si">{</span><span class="n">session</span><span class="o">.</span><span class="n">session_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_setup_api_routes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets up the routes for the FastAPI application.</span>
+
+<span class="sd">        This method defines several HTTP endpoints that allow clients to interact with their transcription sessions.</span>
+<span class="sd">        Routes are organized into session management, transcription access, and legacy compatibility endpoints.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_setup_session_management_routes</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_setup_transcription_routes</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_setup_session_management_routes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Setup routes for session creation, deletion, and management.&quot;&quot;&quot;</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s2">&quot;/sessions&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Create a new transcription session&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">SessionResponse</span><span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">create_session</span><span class="p">(</span><span class="n">model_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ModelConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">session_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SessionResponse</span><span class="p">:</span>
+            <span class="n">session_id</span> <span class="o">=</span> <span class="n">session_id</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">())</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_or_create_session</span><span class="p">(</span><span class="n">session_id</span><span class="p">,</span> <span class="n">model_config</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">SessionResponse</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">session_id</span><span class="p">,</span> <span class="n">model_configuration</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">model_config</span><span class="o">.</span><span class="n">model_dump</span><span class="p">())</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Create a transcription session with specific ID&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">SessionResponse</span><span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">create_session_with_id</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">model_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ModelConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SessionResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="n">existing_session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+                <span class="k">return</span> <span class="n">SessionResponse</span><span class="p">(</span>
+                    <span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s2">&quot;Session already exists&quot;</span><span class="p">,</span> <span class="n">model_configuration</span><span class="o">=</span><span class="n">existing_session</span><span class="o">.</span><span class="n">model_config</span><span class="o">.</span><span class="n">model_dump</span><span class="p">()</span>
+                <span class="p">)</span>
+
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_or_create_session</span><span class="p">(</span><span class="n">session_id</span><span class="p">,</span> <span class="n">model_config</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">SessionResponse</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">session_id</span><span class="p">,</span> <span class="n">model_configuration</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">model_config</span><span class="o">.</span><span class="n">model_dump</span><span class="p">())</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Remove a transcription session&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">MessageResponse</span><span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">delete_session</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MessageResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_session</span><span class="p">(</span><span class="n">session_id</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">MessageResponse</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Session </span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2"> removed successfully&quot;</span><span class="p">,</span> <span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="n">SESSION_NOT_FOUND_MSG</span><span class="p">)</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;/sessions&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;List all active sessions&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">SessionListResponse</span><span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">list_sessions</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">SessionListResponse</span><span class="p">:</span>
+            <span class="n">sessions</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">SessionInfo</span><span class="p">(</span>
+                    <span class="n">session_id</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">session_id</span><span class="p">,</span>
+                    <span class="n">model_configuration</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">model_config</span><span class="o">.</span><span class="n">model_dump</span><span class="p">(),</span>
+                    <span class="n">inference_running</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">inference_task</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">session</span><span class="o">.</span><span class="n">inference_task</span><span class="o">.</span><span class="n">done</span><span class="p">(),</span>
+                    <span class="n">transcription_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">transcriptions</span><span class="p">),</span>
+                    <span class="n">current_transcription</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">current_transcription</span><span class="p">,</span>
+                    <span class="n">audio_queue_size</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">queue_size</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">for</span> <span class="n">session</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+            <span class="p">]</span>
+            <span class="k">return</span> <span class="n">SessionListResponse</span><span class="p">(</span><span class="n">sessions</span><span class="o">=</span><span class="n">sessions</span><span class="p">,</span> <span class="n">total_sessions</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">sessions</span><span class="p">))</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">/status&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Get session status&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">SessionStatusResponse</span><span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_session_status</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SessionStatusResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="n">SESSION_NOT_FOUND_MSG</span><span class="p">)</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">SessionStatusResponse</span><span class="p">(</span>
+                <span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">,</span>
+                <span class="n">is_downloading</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">is_downloading</span><span class="p">,</span>
+                <span class="n">inference_running</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">inference_task</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">session</span><span class="o">.</span><span class="n">inference_task</span><span class="o">.</span><span class="n">done</span><span class="p">(),</span>
+                <span class="n">audio_queue_size</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">queue_size</span><span class="p">,</span>
+                <span class="n">audio_queue_processed</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">processed_chunks</span><span class="p">,</span>
+                <span class="n">transcription_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">transcriptions</span><span class="p">),</span>
+                <span class="n">model_configuration</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">model_config</span><span class="o">.</span><span class="n">model_dump</span><span class="p">(),</span>
+            <span class="p">)</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">/clear&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Clear transcriptions for a session&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">MessageResponse</span><span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">clear_session_transcriptions</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MessageResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="n">SESSION_NOT_FOUND_MSG</span><span class="p">)</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+
+            <span class="c1"># Clear transcription data</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">transcriptions</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">current_transcription</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+            <span class="k">return</span> <span class="n">MessageResponse</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s2">&quot;Transcriptions cleared successfully&quot;</span><span class="p">)</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">/restart&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Restart inference for a session&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">SessionOperationResponse</span><span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">restart_session</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SessionOperationResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="n">SESSION_NOT_FOUND_MSG</span><span class="p">)</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+
+            <span class="c1"># Stop current inference</span>
+            <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">stop_inference</span><span class="p">()</span>
+
+            <span class="c1"># Start new inference</span>
+            <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">start_inference</span><span class="p">()</span>
+
+            <span class="k">return</span> <span class="n">SessionOperationResponse</span><span class="p">(</span>
+                <span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">,</span>
+                <span class="n">message</span><span class="o">=</span><span class="s2">&quot;Inference restarted successfully&quot;</span><span class="p">,</span>
+                <span class="n">inference_running</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">inference_task</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">session</span><span class="o">.</span><span class="n">inference_task</span><span class="o">.</span><span class="n">done</span><span class="p">(),</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_setup_transcription_routes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Setup routes for accessing transcription data and controlling sessions.&quot;&quot;&quot;</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">/transcriptions&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Get all transcriptions for a session&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">TranscriptionsResponse</span>
+        <span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_transcriptions</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TranscriptionsResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="n">SESSION_NOT_FOUND_MSG</span><span class="p">)</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">TranscriptionsResponse</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">,</span> <span class="n">transcriptions</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">transcriptions</span><span class="p">)</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">/transcription/current&quot;</span><span class="p">,</span>
+            <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Get the current transcription for a session&quot;</span><span class="p">,</span>
+            <span class="n">response_model</span><span class="o">=</span><span class="n">CurrentTranscriptionResponse</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_current</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CurrentTranscriptionResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="n">SESSION_NOT_FOUND_MSG</span><span class="p">)</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">CurrentTranscriptionResponse</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">,</span> <span class="n">current_transcription</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">current_transcription</span><span class="p">)</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">/transcription/final&quot;</span><span class="p">,</span>
+            <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Get the final transcription for a session&quot;</span><span class="p">,</span>
+            <span class="n">response_model</span><span class="o">=</span><span class="n">FinalTranscriptionResponse</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_final</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FinalTranscriptionResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="n">SESSION_NOT_FOUND_MSG</span><span class="p">)</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">FinalTranscriptionResponse</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">,</span> <span class="n">final_transcription</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">full_transcription</span><span class="p">)</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">/queue/size&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Get the current audio queue size for a session&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">QueueSizeResponse</span>
+        <span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_audio_queue_size</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueueSizeResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="n">SESSION_NOT_FOUND_MSG</span><span class="p">)</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">QueueSizeResponse</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">,</span> <span class="n">audio_queue_size</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">queue_size</span><span class="p">)</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">/queue/processed&quot;</span><span class="p">,</span>
+            <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Get num processed audio queue items for a session&quot;</span><span class="p">,</span>
+            <span class="n">response_model</span><span class="o">=</span><span class="n">QueueProcessedResponse</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_audio_queue_processed</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueueProcessedResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="n">SESSION_NOT_FOUND_MSG</span><span class="p">)</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">QueueProcessedResponse</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">,</span> <span class="n">audio_queue_processed</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">processed_chunks</span><span class="p">)</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s2">&quot;/sessions/</span><span class="si">{session_id}</span><span class="s2">/queue/clear&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Clear audio queue for a session&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">MessageResponse</span><span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">clear_audio_queue</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MessageResponse</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">session_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="n">SESSION_NOT_FOUND_MSG</span><span class="p">)</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_sessions</span><span class="p">[</span><span class="n">session_id</span><span class="p">]</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">clear_audio_queue</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">MessageResponse</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s2">&quot;Audio queue cleared successfully&quot;</span><span class="p">)</span>
+
+        <span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s2">&quot;/clear&quot;</span><span class="p">,</span> <span class="n">summary</span><span class="o">=</span><span class="s2">&quot;Clear transcriptions (legacy)&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">MessageResponse</span><span class="p">)</span>
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">clear_legacy</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">MessageResponse</span><span class="p">:</span>
+            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_or_create_session</span><span class="p">(</span><span class="s2">&quot;default&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Clear transcription data</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">transcriptions</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">current_transcription</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+            <span class="k">return</span> <span class="n">MessageResponse</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Transcriptions cleared successfully&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="TranscriptionServer.run">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.server.TranscriptionServer.run">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Starts the FastAPI application in a separate thread.</span>
+
+<span class="sd">        This method runs the FastAPI server using Uvicorn, which handles the HTTP requests for the transcription service.</span>
+<span class="sd">        The server is launched in a separate thread, allowing the application to run concurrently with other tasks.</span>
+<span class="sd">        It uses the `host` and `port` parameters defined in the class to bind the server.</span>
+
+<span class="sd">        The server operates as a daemon thread, meaning it will not block the main program from exiting.</span>
+
+<span class="sd">        .. note::</span>
+
+<span class="sd">            - The application listens for HTTP requests at the specified `host` and `port`.</span>
+<span class="sd">            - Ensure that the necessary configurations for the host and port are provided when calling this method.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span>
+            <span class="n">target</span><span class="o">=</span><span class="n">uvicorn</span><span class="o">.</span><span class="n">run</span><span class="p">,</span>
+            <span class="n">kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;app&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">app</span><span class="p">,</span> <span class="s2">&quot;host&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="s2">&quot;port&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">,</span> <span class="s2">&quot;access_log&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+            <span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Nico Fuchs &amp; Matthias Laton.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

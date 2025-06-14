@@ -1,0 +1,523 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>whisper_web.inputstream_generator &mdash; Whisper RT 1.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/autodoc_pydantic.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/theme_overrides.css" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=8d563738"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            Whisper RT
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">Whisper Web API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html#core-components">Core Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html#speech-recognition">Speech Recognition</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html#audio-processing">Audio Processing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html#event-system">Event System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html#data-types-utilities">Data Types &amp; Utilities</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Whisper RT</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">whisper_web.inputstream_generator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for whisper_web.inputstream_generator</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span><span class="p">,</span> <span class="n">Field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncGenerator</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">soundfile</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sf</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">resampy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.events</span><span class="w"> </span><span class="kn">import</span> <span class="n">EventBus</span><span class="p">,</span> <span class="n">AudioChunkGenerated</span><span class="p">,</span> <span class="n">AudioChunkNum</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">whisper_web.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">AudioChunk</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">sounddevice</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sd</span>
+<span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;If `GLIBCXX_x.x.x&#39; not found, try installing it with: conda install -c conda-forge libstdcxx-ng=12&quot;</span><span class="p">)</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="GeneratorConfig">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.inputstream_generator.GeneratorConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GeneratorConfig</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration model for controlling audio input generation behavior.</span>
+
+<span class="sd">    This configuration class is used to define how audio should be captured,</span>
+<span class="sd">    processed, and segmented before being sent to a speech recognition system.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">samplerate</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">16000</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;The specified samplerate of the audio data.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">blocksize</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">6000</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;The size of each individual audio chunk.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">max_length_s</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">25</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;The maximum length of the audio data.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">adjustment_time</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;The adjustment_time for setting the silence threshold.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">min_chunks</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;The minimum number of chunks to be generated, before feeding it into the asr model.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">phrase_delta</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="n">default</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;The expected pause between two phrases in seconds.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">continuous</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Whether to generate audio data conituously or not.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">from_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="n">default</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;The path to the audio file to be used for inference.&quot;</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="InputStreamGenerator">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.inputstream_generator.InputStreamGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">InputStreamGenerator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Handles real-time or file-based audio input for speech processing and transcription.</span>
+
+<span class="sd">    This class manages the lifecycle of audio input—from capturing or loading audio data to detecting</span>
+<span class="sd">    speech segments and dispatching them for transcription. It supports both live microphone streams</span>
+<span class="sd">    and pre-recorded audio files, and includes configurable voice activity detection (VAD) heuristics</span>
+<span class="sd">    and silence detection.</span>
+
+<span class="sd">    Core Features:</span>
+
+<span class="sd">        - **Real-Time Audio Input**: Captures audio using a microphone input stream.</span>
+<span class="sd">        - **File-Based Input**: Reads and processes audio from a file if specified.</span>
+<span class="sd">        - **Silence Threshold Calibration**: Dynamically computes the silence threshold based on environmental noise.</span>
+<span class="sd">        - **Voice Activity Detection (VAD)**: Supports both model-based and heuristic-based VAD.</span>
+<span class="sd">        - **Phrase Segmentation**: Aggregates audio buffers into speech phrases based on silence duration and loudness.</span>
+<span class="sd">        - **Asynchronous Processing**: Fully asynchronous design suitable for non-blocking audio pipelines.</span>
+
+<span class="sd">    :param generator_config: Configuration object with audio processing settings</span>
+<span class="sd">    :type generator_config: :class:`GeneratorConfig`</span>
+<span class="sd">    :param transcription_manager: Instance of the TranscriptionManager to handle transcription logic</span>
+<span class="sd">    :type transcription_manager: :class:`TranscriptionManager`</span>
+
+<span class="sd">    :ivar _samplerate: Sample rate for audio processing as :class:`int`.</span>
+<span class="sd">    :ivar _blocksize: Size of each audio block as :class:`int`.</span>
+<span class="sd">    :ivar _adjustment_time: Time in seconds for adjusting silence threshold as :class:`int`.</span>
+<span class="sd">    :ivar _min_chunks: Minimum number of chunks to process as :class:`int`.</span>
+<span class="sd">    :ivar _continuous: Flag for continuous processing as :class:`bool`.</span>
+<span class="sd">    :ivar _use_vad_model: Flag for using VAD model as :class:`bool`.</span>
+<span class="sd">    :ivar _use_vad_heuristic: Flag for using VAD heuristic as :class:`bool`.</span>
+<span class="sd">    :ivar _global_ndarray: Global buffer for audio data as :class:`np.ndarray`.</span>
+<span class="sd">    :ivar _phrase_delta_blocks: Max number of blocks for inbetween phrases as :class:`int`.</span>
+<span class="sd">    :ivar _silence_threshold: Threshold for silence detection as :class:`float`.</span>
+<span class="sd">    :ivar _max_blocksize: Maximum size of audio block as :class:`int`.</span>
+<span class="sd">    :ivar _max_chunks: Maximum number of chunks as :class:`int`.</span>
+<span class="sd">    :ivar _generator_manager: Instance of the :class:`GeneratorManager` to handle audio chunks and status.</span>
+<span class="sd">    :ivar _from_file: Path to the audio file if specified as :class:`str`.</span>
+
+<span class="sd">    .. note::</span>
+
+<span class="sd">        Instantiate this class with a `GeneratorConfig` and `TranscriptionManager`, then call `process_audio()`</span>
+<span class="sd">        to start listening or processing input.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">generator_config</span><span class="p">:</span> <span class="n">GeneratorConfig</span><span class="p">,</span> <span class="n">event_bus</span><span class="p">:</span> <span class="n">EventBus</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">samplerate</span> <span class="o">=</span> <span class="n">generator_config</span><span class="o">.</span><span class="n">samplerate</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">blocksize</span> <span class="o">=</span> <span class="n">generator_config</span><span class="o">.</span><span class="n">blocksize</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">adjustment_time</span> <span class="o">=</span> <span class="n">generator_config</span><span class="o">.</span><span class="n">adjustment_time</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">min_chunks</span> <span class="o">=</span> <span class="n">generator_config</span><span class="o">.</span><span class="n">min_chunks</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">continuous</span> <span class="o">=</span> <span class="n">generator_config</span><span class="o">.</span><span class="n">continuous</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">event_bus</span> <span class="o">=</span> <span class="n">event_bus</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">phrase_delta_blocks</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">samplerate</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocksize</span><span class="p">)</span> <span class="o">*</span> <span class="n">generator_config</span><span class="o">.</span><span class="n">phrase_delta</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">silence_threshold</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_blocksize</span> <span class="o">=</span> <span class="n">generator_config</span><span class="o">.</span><span class="n">max_length_s</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">samplerate</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_chunks</span> <span class="o">=</span> <span class="n">generator_config</span><span class="o">.</span><span class="n">max_length_s</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">samplerate</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocksize</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">from_file</span> <span class="o">=</span> <span class="n">generator_config</span><span class="o">.</span><span class="n">from_file</span>
+
+<div class="viewcode-block" id="InputStreamGenerator.process_audio">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.inputstream_generator.InputStreamGenerator.process_audio">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_audio</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Entry point for audio processing based on the selected VAD configuration.</span>
+
+<span class="sd">        Determines which voice activity detection (VAD) strategy to use.</span>
+
+<span class="sd">        .. note::</span>
+
+<span class="sd">            - If VAD heuristic is enabled: processes and filters audio based on conditional silence detection.</span>
+<span class="sd">            - Else: buffers full audio input and passes it to the TranscriptionManager.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_file</span><span class="p">:</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_from_file</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">from_file</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_silence_threshold</span><span class="p">()</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_with_heuristic</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="InputStreamGenerator.generate">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.inputstream_generator.InputStreamGenerator.generate">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AsyncGenerator</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Asynchronously generates audio chunks for processing from a live input stream.</span>
+
+<span class="sd">        This method acts as a unified audio generator, yielding blocks of audio data for downstream processing.</span>
+
+<span class="sd">        Behavior:</span>
+
+<span class="sd">            - Opens an audio input stream using `sounddevice.InputStream`.</span>
+<span class="sd">            - Captures audio in blocks of `self.blocksize`, configured for mono 16-bit input.</span>
+<span class="sd">            - Uses a thread-safe callback to push incoming audio data into an `asyncio.Queue`.</span>
+<span class="sd">            - Yields `(in_data, status)` tuples from the queue as they become available.</span>
+
+<span class="sd">        :return: A tuple containing the raw audio block and its status.</span>
+<span class="sd">        :rtype: Iterator[Tuple[np.ndarray, CallbackFlags]]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">q_in</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+        <span class="n">loop</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">get_event_loop</span><span class="p">()</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">callback</span><span class="p">(</span><span class="n">in_data</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">__</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+            <span class="n">loop</span><span class="o">.</span><span class="n">call_soon_threadsafe</span><span class="p">(</span><span class="n">q_in</span><span class="o">.</span><span class="n">put_nowait</span><span class="p">,</span> <span class="p">(</span><span class="n">in_data</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">state</span><span class="p">))</span>
+
+        <span class="c1"># Default stream args</span>
+        <span class="n">stream_args</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>  <span class="c1"># type: ignore</span>
+            <span class="n">samplerate</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">samplerate</span><span class="p">,</span>
+            <span class="n">channels</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;int16&quot;</span><span class="p">,</span>  <span class="c1"># type: ignore</span>
+            <span class="n">blocksize</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">blocksize</span><span class="p">,</span>
+            <span class="n">callback</span><span class="o">=</span><span class="n">callback</span><span class="p">,</span>  <span class="c1"># type: ignore</span>
+        <span class="p">)</span>
+
+        <span class="n">stream</span> <span class="o">=</span> <span class="n">sd</span><span class="o">.</span><span class="n">InputStream</span><span class="p">(</span>
+            <span class="o">**</span><span class="n">stream_args</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">with</span> <span class="n">stream</span><span class="p">:</span>
+            <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                <span class="n">indata</span><span class="p">,</span> <span class="n">status</span> <span class="o">=</span> <span class="k">await</span> <span class="n">q_in</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+                <span class="k">yield</span> <span class="n">indata</span><span class="p">,</span> <span class="n">status</span></div>
+
+
+<div class="viewcode-block" id="InputStreamGenerator.generate_from_file">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.inputstream_generator.InputStreamGenerator.generate_from_file">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_from_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Processes audio data from a file and simulates streaming for transcription.</span>
+
+<span class="sd">        This method reads audio from the given file path, optionally resamples and converts it to mono,</span>
+<span class="sd">        and then splits the audio into chunks that simulate live microphone input. Each chunk is passed</span>
+<span class="sd">        to the transcription manager after waiting for the current transcription to complete.</span>
+
+<span class="sd">        Workflow:</span>
+
+<span class="sd">            1. **File Loading**:</span>
+<span class="sd">                - Reads audio from the specified file using `soundfile`.</span>
+<span class="sd">                - Supports multi-channel audio, which is converted to mono by selecting the first channel.</span>
+
+<span class="sd">            2. **Resampling**:</span>
+<span class="sd">                - If the audio files sample rate differs from the expected rate (`self.samplerate`),</span>
+<span class="sd">                    the data is resampled to match.</span>
+
+<span class="sd">            3. **Chunking**:</span>
+<span class="sd">                - Audio is divided into blocks of `self.max_blocksize` samples.</span>
+<span class="sd">                - The final chunk is zero-padded if it is shorter than the expected size.</span>
+
+<span class="sd">            4. **Transcription Dispatch**:</span>
+<span class="sd">                - Each chunk is set as the current buffer and dispatched for transcription using `_send_audio()`.</span>
+<span class="sd">                - Waits for the transcription manager&#39;s signal (`transcription_status.wait()`) before continuing.</span>
+
+<span class="sd">            5. **Timing Info**:</span>
+<span class="sd">                - Logs the total time taken to process the file.</span>
+
+<span class="sd">        :param file_path: Path to the audio file to be processed</span>
+<span class="sd">        :type file_path: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">data</span><span class="p">,</span> <span class="n">samplerate</span> <span class="o">=</span> <span class="n">sf</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;float32&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">ndim</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+
+        <span class="c1"># Resample if needed</span>
+        <span class="k">if</span> <span class="n">samplerate</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">samplerate</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">resampy</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="n">samplerate</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">samplerate</span><span class="p">)</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="p">(</span><span class="n">data</span> <span class="o">*</span> <span class="mi">32767</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="c1"># Mono conversion (just take first channel)</span>
+        <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+
+        <span class="n">num_chunks</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_blocksize</span><span class="p">))</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processing file </span><span class="si">{</span><span class="n">file_path</span><span class="si">}</span><span class="s2"> with </span><span class="si">{</span><span class="n">num_chunks</span><span class="si">}</span><span class="s2"> chunks of size </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">max_blocksize</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_bus</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">AudioChunkNum</span><span class="p">(</span><span class="n">num_chunks</span><span class="o">=</span><span class="n">num_chunks</span><span class="p">))</span>
+
+        <span class="c1"># Yield chunks of blocksize</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_blocksize</span><span class="p">):</span>
+            <span class="n">chunk</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">i</span> <span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_blocksize</span><span class="p">]</span>  <span class="c1"># type: ignore</span>
+
+            <span class="c1"># Pad the last chunk if it&#39;s too short</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_blocksize</span><span class="p">:</span>
+                <span class="n">chunk</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">chunk</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_blocksize</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">)),</span> <span class="s2">&quot;constant&quot;</span><span class="p">,</span> <span class="n">constant_values</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span> <span class="o">=</span> <span class="n">chunk</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_audio</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="InputStreamGenerator.process_with_heuristic">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.inputstream_generator.InputStreamGenerator.process_with_heuristic">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_with_heuristic</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Continuously processes audio input, detects significant speech segments, and dispatches them for transcription.</span>
+
+<span class="sd">        This method operates in an asynchronous loop, consuming real-time audio buffers from `generate()`, aggregating</span>
+<span class="sd">        meaningful speech segments while filtering out silence or noise based on a calculated silence threshold.</span>
+
+<span class="sd">        Behavior:</span>
+
+<span class="sd">            - **Silence Detection**:</span>
+<span class="sd">                - Buffers with low average volume (below `self.silence_threshold`) are considered silent.</span>
+<span class="sd">                - If `self.use_vad_heuristic` is enabled and several consecutive silent blocks are detected,</span>
+<span class="sd">                    the current speech phrase is considered complete and dispatched via `_send_audio()`.</span>
+
+<span class="sd">            - **Buffer Aggregation**:</span>
+<span class="sd">                - Incoming buffers are accumulated in `self.global_ndarray`.</span>
+<span class="sd">                - If a buffer ends in silence and the aggregated data meets the minimum required chunks (`self.min_chunks`),</span>
+<span class="sd">                    the accumulated audio is dispatched.</span>
+
+<span class="sd">            - **Modes**:</span>
+<span class="sd">                - In continuous mode (`self.continuous` = True), the method loops indefinitely to process ongoing audio.</span>
+<span class="sd">                - Otherwise, it exits after the first valid speech phrase is processed.</span>
+
+<span class="sd">            - **File Mode**:</span>
+<span class="sd">                - If processing from a file (`self.from_file` is not empty), silence threshold setup is skipped.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">empty_blocks</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">async</span> <span class="k">for</span> <span class="n">indata</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate</span><span class="p">():</span>
+            <span class="n">indata_flattened</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">indata</span><span class="o">.</span><span class="n">flatten</span><span class="p">())</span>
+            <span class="n">silence</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">indata_flattened</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">silence_threshold</span>
+            <span class="n">ending_silence</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">indata_flattened</span><span class="p">[</span><span class="o">-</span><span class="mi">500</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">silence_threshold</span>  <span class="c1"># type: ignore</span>
+            <span class="n">starting_silence</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">indata_flattened</span><span class="p">[:</span><span class="mi">500</span><span class="p">])</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">silence_threshold</span>  <span class="c1"># type: ignore</span>
+
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Silence: </span><span class="si">{</span><span class="n">silence</span><span class="si">}</span><span class="s2">, Starting Silence: </span><span class="si">{</span><span class="n">starting_silence</span><span class="si">}</span><span class="s2">, Ending Silence: </span><span class="si">{</span><span class="n">ending_silence</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Process the global ndarray if the max chunks are met</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span><span class="o">.</span><span class="n">size</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocksize</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_chunks</span><span class="p">:</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_audio</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([])</span>  <span class="c1"># reset</span>
+                <span class="n">empty_blocks</span> <span class="o">=</span> <span class="mi">0</span>
+
+            <span class="c1"># continue if start/ending/whole of buffer is not silent</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">starting_silence</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">ending_silence</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">silence</span><span class="p">:</span>
+                <span class="c1"># concatenate buffers</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span><span class="p">,</span> <span class="n">indata</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;int16&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span> <span class="o">=</span> <span class="n">indata</span>
+
+            <span class="c1"># discard buffers that conain mostly silence</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">silence</span><span class="p">:</span>
+                <span class="n">empty_blocks</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">empty_blocks</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">phrase_delta_blocks</span><span class="p">:</span>
+                    <span class="n">empty_blocks</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_audio</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([])</span>  <span class="c1"># reset</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">continuous</span><span class="p">:</span>
+                        <span class="k">return</span>
+                <span class="k">continue</span>
+
+            <span class="n">empty_blocks</span> <span class="o">=</span> <span class="mi">0</span>
+
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_audio</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span><span class="o">.</span><span class="n">size</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocksize</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">min_chunks</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="InputStreamGenerator.process_raw_audio">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.inputstream_generator.InputStreamGenerator.process_raw_audio">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_raw_audio</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Continuously collects and dispatches raw audio chunks without any VAD filtering.</span>
+
+<span class="sd">        This method is used when VAD heuristics is not enabled.</span>
+<span class="sd">        It simply accumulates incoming audio buffers and dispatches them once a minimum</span>
+<span class="sd">        number of chunks (`self.min_chunks`) has been collected.</span>
+
+<span class="sd">        Behavior:</span>
+
+<span class="sd">            - Audio is collected unfiltered from the input stream.</span>
+<span class="sd">            - When the total buffered data reaches the defined threshold, it is sent for transcription.</span>
+<span class="sd">            - In non-continuous mode (`self.continuous` = False), processing stops after the first valid dispatch.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">async</span> <span class="k">for</span> <span class="n">indata</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate</span><span class="p">():</span>
+            <span class="c1"># concatenate buffers</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span><span class="p">,</span> <span class="n">indata</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;int16&quot;</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span> <span class="o">=</span> <span class="n">indata</span>
+
+            <span class="c1"># Process the global ndarray if the required chunks are met</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span><span class="o">.</span><span class="n">size</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocksize</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">min_chunks</span><span class="p">:</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_audio</span><span class="p">()</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">continuous</span><span class="p">:</span>
+                    <span class="k">return</span></div>
+
+
+<div class="viewcode-block" id="InputStreamGenerator.send_audio">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.inputstream_generator.InputStreamGenerator.send_audio">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">send_audio</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">is_final</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Dispatches the collected audio buffer for transcription after normalization.</span>
+
+<span class="sd">        This method converts the internal audio buffer (`self.global_ndarray`) from</span>
+<span class="sd">        16-bit PCM format to a normalized float32 waveform in the range [-1.0, 1.0].</span>
+<span class="sd">        It then assigns the waveform to the appropriate field in the `TranscriptionManager`,</span>
+<span class="sd">        depending on whether a VAD model is being used.</span>
+
+<span class="sd">        Behavior:</span>
+
+<span class="sd">            - If `self.use_vad_model` is True, assigns the waveform to `transcription_manager.audio`.</span>
+<span class="sd">            - Otherwise, assigns the waveform to `transcription_manager.clean_audio`.</span>
+<span class="sd">            - Clears the internal audio buffer after dispatching.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Normalize int16 to float32 waveform in range [-1.0, 1.0]</span>
+        <span class="n">waveform</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">global_ndarray</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;float32&quot;</span><span class="p">)</span> <span class="o">/</span> <span class="mf">32768.0</span><span class="p">)</span>
+        <span class="n">audio_chunk</span> <span class="o">=</span> <span class="n">AudioChunk</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">waveform</span><span class="p">,</span> <span class="n">timestamp</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">())</span>
+        <span class="c1"># Publish the audio chunk event</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_bus</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">AudioChunkGenerated</span><span class="p">(</span><span class="n">audio_chunk</span><span class="p">,</span> <span class="n">is_final</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="InputStreamGenerator.set_silence_threshold">
+<a class="viewcode-back" href="../../whisper_web.html#whisper_web.inputstream_generator.InputStreamGenerator.set_silence_threshold">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">set_silence_threshold</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Dynamically determines and sets the silence threshold based on initial audio input.</span>
+
+<span class="sd">        This method analyzes the average loudness of incoming audio blocks during a short calibration phase</span>
+<span class="sd">        to determine an appropriate silence threshold. The threshold helps distinguish between background</span>
+<span class="sd">        noise and meaningful speech during audio processing.</span>
+
+<span class="sd">        How it works:</span>
+
+<span class="sd">            1. **Calibration Phase**:</span>
+<span class="sd">                - Processes audio blocks for a predefined duration (`_adjustment_time` in seconds).</span>
+<span class="sd">                - For each block, computes the mean absolute loudness and stores it.</span>
+
+<span class="sd">            2. **Threshold Calculation**:</span>
+<span class="sd">                - After enough blocks are collected, calculates the average loudness across all blocks.</span>
+<span class="sd">                - Sets `self.silence_threshold` to this value, treating it as the baseline for silence.</span>
+
+<span class="sd">        .. note::</span>
+
+<span class="sd">            - This method is skipped if audio is being read from a file (`self.from_file` is set).</span>
+<span class="sd">            - Intended to run once before audio processing begins, helping tailor silence detection to the environment.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">blocks_processed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">loudness_values</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">async</span> <span class="k">for</span> <span class="n">indata</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate</span><span class="p">():</span>
+            <span class="n">blocks_processed</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">indata_flattened</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">indata</span><span class="o">.</span><span class="n">flatten</span><span class="p">())</span>
+
+            <span class="c1"># Compute loudness over first few seconds to adjust silence threshold</span>
+            <span class="n">loudness_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">indata_flattened</span><span class="p">))</span>  <span class="c1"># type: ignore</span>
+
+            <span class="c1"># Stop recording after ADJUSTMENT_TIME seconds</span>
+            <span class="k">if</span> <span class="n">blocks_processed</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">adjustment_time</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">samplerate</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocksize</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">silence_threshold</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">loudness_values</span><span class="p">))</span>  <span class="c1"># type: ignore</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Silence threshold set to </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">silence_threshold</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">break</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Nico Fuchs &amp; Matthias Laton.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
