@@ -23,6 +23,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.viewcode",
     "sphinxcontrib.autodoc_pydantic",
+    "sphinx.ext.githubpages",
 ]
 
 autodoc_pydantic_model_show_json = False
