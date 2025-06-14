@@ -5,7 +5,7 @@ import soundfile as sf
 import io
 
 from whisper_web.inputstream_generator import GeneratorConfig, InputStreamGenerator
-from whisper_web.management import AudioChunkManager
+from whisper_web.management import AudioManager
 from whisper_web.events import EventBus
 from app.helper import get_server_urls
 
@@ -83,7 +83,7 @@ async def get_session_status(base_url: str, session_id: str):
                 print(f"Failed to get session status: {response.status}")
 
 
-async def stream_audio(session_id: str, manager: AudioChunkManager):
+async def stream_audio(session_id: str, manager: AudioManager):
     # Connect to WebSocket
     uri = f"{WS_BASE_URL}/ws/transcribe/{session_id}"
 
@@ -177,10 +177,10 @@ async def main():
         # Create generator config and manager
         event_bus = EventBus()
         generator_config = GeneratorConfig()
-        generator_manager = AudioChunkManager(event_bus)
+        generator_manager = AudioManager(event_bus)
         generator = InputStreamGenerator(generator_config, event_bus)
         print("InputStreamGenerator created")
-        print("AudioChunkManager created")
+        print("AudioManager created")
         print("Starting audio processing...")
 
         audio_task = asyncio.create_task(generator.process_audio())

@@ -79,7 +79,7 @@ class TranscriptionManager:
             self.audio_queue.get_nowait()
 
 
-class AudioChunkManager:
+class AudioManager:
     """Event-driven audio chunk manager."""
 
     def __init__(self, event_bus: EventBus):

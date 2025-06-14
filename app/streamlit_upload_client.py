@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from typing import Optional
 from whisper_web.inputstream_generator import GeneratorConfig, InputStreamGenerator
-from whisper_web.management import AudioChunkManager
+from whisper_web.management import AudioManager
 from whisper_web.events import EventBus
 from app.helper import get_server_urls
 
@@ -111,7 +111,7 @@ async def run_async_stream(session_id: str, audio_file_path: str, result_holder:
         # Create generator config and manager
         event_bus = EventBus()
         generator_config = GeneratorConfig(from_file=audio_file_path)
-        generator_manager = AudioChunkManager(event_bus)
+        generator_manager = AudioManager(event_bus)
         generator = InputStreamGenerator(generator_config, event_bus)
 
         audio_task = asyncio.create_task(generator.process_audio())
@@ -150,7 +150,7 @@ def run_async_stream_wrapper(session_id: str, audio_file_path: str, result_holde
             pass
 
 
-async def stream_audio_file_background(session_id: str, manager: AudioChunkManager, result_holder: BackgroundStreamResult):
+async def stream_audio_file_background(session_id: str, manager: AudioManager, result_holder: BackgroundStreamResult):
     """Stream audio file to the transcription server via WebSocket in background."""
     try:
         # Connect to WebSocket
