@@ -52,7 +52,7 @@ Execution Flow Chart
 
    Detailed execution flow of the transcription process
 
-Pckage Overview
+Package Overview
 ^^^^^^^^^^^^^^^
 
 .. figure:: ../diagrams/packages_whisper-web.png
