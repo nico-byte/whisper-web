@@ -8,7 +8,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./.models:/server/.models # Local models directory for inference
+      - whisper_models:/server/.models # Local models directory for inference
     env_file:
       - .env
     environment:
@@ -34,7 +34,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./.models:/server/.models # Local models directory for inference
+      - whisper_models:/server/.models # Local models directory for inference
     env_file:
       - .env
     environment:
@@ -126,6 +126,10 @@ services:
 volumes:
   whisper_models:
     driver: local
+    driver_opts:
+      type: none
+      device: ${HF_HOME:-./.models}  # Local directory for models
+      o: bind
 
 networks:
   mynet:

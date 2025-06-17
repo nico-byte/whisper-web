@@ -1,6 +1,7 @@
 .PHONY: format lint lintfix pytest
-.PHONY: docker.cpu-streamlit docker.cuda-streamlit docker.build-cpu docker.build-cuda docker.build-streamlit docker.build-all docker.clean
-.PHONY: local.server local.cli local.upload local.viewer local.run-cli local.run-upload
+.PHONY: docker..up.server-cpu-streamlit docker.up.server-cuda-streamlit docker.build.server-cpu 
+.PHONY: docker.build.server-cuda docker.build.streamlit docker.build.all docker.clean
+.PHONY: local.server local.cli local.upload local.viewer local.run.cli local.run.upload
 
 SHELL := /bin/bash
 
@@ -18,23 +19,23 @@ pytest:
 	source ./.venv/bin/activate && ./.venv/bin/python -m pytest ./tests -v --tb=short
 
 # Docker tasks
-docker.cpu-streamlit:
-	SERVER_TYPE=cpu docker compose --profile cpu --profile streamlit up
+docker.up.server-cpu-streamlit:
+	SERVER_TYPE=cpu docker compose --profile cpu --profile streamlit up --force-recreate
 
-docker.cuda-streamlit:
+docker.up.server-cuda-streamlit:
 	SERVER_TYPE=cuda docker compose --profile cuda --profile streamlit up
 
-docker.build-cpu:
+docker.build.server-cpu:
 	docker compose build server-cpu
 
-docker.build-cuda:
+docker.build.server-cuda:
 	docker compose build server-cuda
 
-docker.build-streamlit:
+docker.build.streamlit:
 	docker compose build streamlit-upload
 	docker compose build streamlit-viewer
 
-docker.build-all:
+docker.build.all:
 	docker compose build server-cpu
 	docker compose build server-cuda
 	docker compose build streamlit-upload
@@ -42,7 +43,8 @@ docker.build-all:
 
 docker.clean:
 	docker compose down -v --remove-orphans
-	docker system prune -f
+	docker system prune -f --volumes
+	docker image prune -f
 
 # Local development tasks - using the local venv
 local.server:
@@ -57,7 +59,7 @@ local.viewer:
 local.upload:
 	source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_upload_client.py --server.address 127.0.0.1
 
-local.run-cli:
+local.run.cli:
 	@echo "Starting server and cli..."
 	@trap 'echo "Stopping..."; kill 0' SIGINT SIGTERM EXIT; \
 	( \
@@ -71,7 +73,7 @@ local.run-cli:
 		wait \
 	)
 
-local.run-upload:
+local.run.upload:
 	@echo "Starting server and upload frontend..."
 	@trap 'echo "Stopping..."; kill 0' SIGINT SIGTERM EXIT; \
 	( \

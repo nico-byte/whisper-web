@@ -42,7 +42,8 @@ RUN --mount=type=cache,uid=${USER_ID},gid=${GROUP_ID},target=/home/${USER}/.cach
     uv sync --frozen --no-install-project --group server --extra cu128 --python python3.12
 
 # Copy local source tree with correct ownership
-COPY --chown=$USER:$USER ./ .
+COPY --chown=$USER:$USER whisper_web whisper_web
+COPY --chown=$USER:$USER app app
 
 # Create directory for models (will be cached and mounted as volume)
 RUN mkdir -p /home/$USER/.models
