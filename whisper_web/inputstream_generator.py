@@ -299,7 +299,7 @@ class InputStreamGenerator:
         16-bit PCM format to a normalized float32 waveform in the range [-1.0, 1.0].
         It then creates an `AudioChunk` instance with the normalized data and publishes
         it as an `AudioChunkGenerated` event to the event bus.
-        
+
         :param is_final: Indicates if the audio chunk is complete and ready for final processing.
         :type is_final: :class:`bool`
         """

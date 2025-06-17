@@ -13,6 +13,7 @@ from whisper_web.whisper_model import ModelConfig, WhisperModel
 from whisper_web.management import TranscriptionManager
 from whisper_web.events import EventBus, AudioChunkReceived, DownloadModel
 from whisper_web.types import AudioChunk
+from whisper_web.utils import get_installed_models
 
 
 # Constants
@@ -70,6 +71,12 @@ class TranscriptionsResponse(BaseModel):
 
     session_id: str = Field(..., description="Session identifier")
     transcriptions: List[str] = Field(..., description="List of all transcriptions")
+
+
+class InstalledModelsResponse(BaseModel):
+    """Response schema for getting all installed models."""
+
+    installed_models: List[str] = Field(..., description="List of all installed models")
 
 
 class CurrentTranscriptionResponse(BaseModel):
@@ -409,6 +416,7 @@ class TranscriptionServer:
             This WebSocket endpoint is the primary interface for real-time
             transcription and supports the binary protocol expected by clients.
         """
+
         @self.app.websocket("/ws/transcribe/{session_id}")
         async def websocket_endpoint_with_session(websocket: WebSocket, session_id: str):
             await websocket.accept()
@@ -483,6 +491,7 @@ class TranscriptionServer:
 
         **Endpoints Configured:**
 
+        - `GET /installed_models` - Get list of installed models on the server
         - `POST /sessions` - Create new session with optional configuration
         - `POST /sessions/{session_id}` - Create session with specific ID
         - `DELETE /sessions/{session_id}` - Remove session and cleanup resources
@@ -499,6 +508,11 @@ class TranscriptionServer:
         - Comprehensive status reporting
         - Operational controls for session management
         """
+
+        @self.app.get("/installed_models", summary="Get installed models for the server", response_model=InstalledModelsResponse)
+        async def installed_models() -> InstalledModelsResponse:
+            installed_models = await asyncio.to_thread(get_installed_models)
+            return InstalledModelsResponse(installed_models=installed_models)
 
         @self.app.post("/sessions", summary="Create a new transcription session", response_model=SessionResponse)
         async def create_session(model_config: Optional[ModelConfig] = None, session_id: Optional[str] = None) -> SessionResponse:

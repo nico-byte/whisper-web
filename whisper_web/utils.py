@@ -1,3 +1,4 @@
+import os
 import torch
 
 
@@ -39,3 +40,42 @@ def set_device(device) -> torch.device:
     # Ultimate fallback to CPU (should always work)
     print("All devices failed, forcing CPU")
     return torch.device("cpu")
+
+
+def get_installed_models():
+    """Scan the .models folder and return formatted model names."""
+    models_path = "./.models"  # Use the current working directory
+    available_models = []
+
+    # Ensure the models path exists
+    if not os.path.exists(models_path):
+        print(f"Models folder does not exist: {models_path}")
+        return []
+
+    try:
+        if os.path.exists(models_path):
+            # List all directories in .models folder
+            for item in os.listdir(models_path):
+                item_path = os.path.join(models_path, item)
+                # Check if it's a directory and starts with "models--"
+                if os.path.isdir(item_path) and item.startswith("models--"):
+                    # Format: models--distil-whisper--distil-large-v3 -> distil-whisper/distil-large-v3
+                    parts = item.split("--")
+                    if len(parts) >= 3:
+                        # Skip the "models" part and join the rest with "/"
+                        formatted_name = "/".join(parts[1:])
+                        available_models.append(formatted_name)
+
+        # Sort models for consistent ordering
+        available_models.sort()
+
+        # Add fallback models if no models found
+        if not available_models:
+            return []
+
+    except Exception as e:
+        print(f"Error scanning models folder: {e}")
+        # Fallback models
+        return []
+
+    return available_models

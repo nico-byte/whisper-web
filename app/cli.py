@@ -12,7 +12,7 @@ from app.helper import get_server_urls
 API_BASE_URL, WS_BASE_URL = get_server_urls()
 
 
-async def create_session_with_model(base_url: str, model_size: str = "small", counter: int = 0) -> None|str:
+async def create_session_with_model(base_url: str, model_size: str = "small", counter: int = 0) -> None | str:
     """Create a new transcription session with a specific model configuration."""
     failed_tries = counter
     try:
@@ -39,16 +39,12 @@ async def create_session_with_model(base_url: str, model_size: str = "small", co
                         history=response.history,
                         status=response.status,
                         message=f"Failed to create session: {response.status}",
-                        headers=response.headers
+                        headers=response.headers,
                     )
     except Exception as e:
         print(f"Error creating session: {e}")
         await asyncio.sleep(1)  # Wait a bit before retrying
-        return (
-            await create_session_with_model(base_url, model_size, counter + 1)
-            if failed_tries < 15
-            else None
-        )
+        return await create_session_with_model(base_url, model_size, counter + 1) if failed_tries < 15 else None
 
 
 async def list_sessions(base_url: str):

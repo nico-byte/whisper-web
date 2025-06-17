@@ -125,9 +125,9 @@ class WhisperModel:
 
         - If `model_id` is provided, uses it directly
         - Otherwise, maps `model_size` to appropriate distil-whisper model:
-          
+
           * 'small' → 'distil-whisper/distil-small.en'
-          * 'medium' → 'distil-whisper/distil-medium.en'  
+          * 'medium' → 'distil-whisper/distil-medium.en'
           * 'large-v3' → 'distil-whisper/distil-large-v3'
           * 'large' → 'distil-whisper/distil-large-v3' (legacy mapping)
 

@@ -254,38 +254,17 @@ def get_session_transcriptions(session_id: str):
         }
 
 
-def get_installed_models():
-    """Scan the .models folder and return formatted model names."""
-    models_path = "./.models"
-    available_models = []
-
+def get_installed_models() -> list:
+    """Get the list of installed models from the server."""
     try:
-        if os.path.exists(models_path):
-            # List all directories in .models folder
-            for item in os.listdir(models_path):
-                item_path = os.path.join(models_path, item)
-                # Check if it's a directory and starts with "models--"
-                if os.path.isdir(item_path) and item.startswith("models--"):
-                    # Format: models--distil-whisper--distil-large-v3 -> distil-whisper/distil-large-v3
-                    parts = item.split("--")
-                    if len(parts) >= 3:
-                        # Skip the "models" part and join the rest with "/"
-                        formatted_name = "/".join(parts[1:])
-                        available_models.append(formatted_name)
-
-        # Sort models for consistent ordering
-        available_models.sort()
-
-        # Add fallback models if no models found
-        if not available_models:
-            available_models = ["distil-whisper/distil-small.en", "distil-whisper/distil-medium.en", "distil-whisper/distil-large-v3"]
-
-    except Exception as e:
-        st.error(f"Error scanning models folder: {e}")
-        # Fallback models
-        available_models = ["distil-whisper/distil-small.en", "distil-whisper/distil-medium.en", "distil-whisper/distil-large-v3"]
-
-    return available_models
+        response = requests.get(f"{API_BASE_URL}/installed_models", timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("installed_models", [])
+    except requests.RequestException as e:
+        st.error(f"Failed to fetch installed models: {str(e)}")
+        # Fallback if API fails
+        return []
 
 
 def display_transcriptions():

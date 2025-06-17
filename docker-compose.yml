@@ -8,11 +8,13 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - whisper_models:/server/.models # Local models directory for inference
+      - models:/home/server/.models # Local models directory for inference
     env_file:
       - .env
     environment:
       - SERVER_TYPE=cpu  # Specify server type
+      - USER_ID=id -u # Use current user ID
+      - GROUP_ID=id -g # Use current group ID
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/sessions"]
@@ -34,11 +36,13 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - whisper_models:/server/.models # Local models directory for inference
+      - models:/home/server/.models # Local models directory for inference
     env_file:
       - .env
     environment:
       - SERVER_TYPE=cuda  # Specify server type
+      - USER_ID=id -u # Use current user ID
+      - GROUP_ID=id -g # Use current group ID
     restart: unless-stopped
     deploy:
       resources:
@@ -72,6 +76,8 @@ services:
     environment:
       - STREAMLIT_SERVER_PORT=${STREAMLIT_UPLOAD_PORT:-8501}
       - SERVER_TYPE=${SERVER_TYPE:-cpu}  # Default to cpu if not set
+      - USER_ID=id -u # Use current user ID
+      - GROUP_ID=id -g # Use current group ID
     depends_on:
       server-cpu:
         condition: service_healthy
@@ -104,6 +110,8 @@ services:
     environment:
       - STREAMLIT_SERVER_PORT=${STREAMLIT_VIEWER_PORT:-8502}
       - SERVER_TYPE=${SERVER_TYPE:-cpu}  # Default to cpu if not set
+      - USER_ID=id -u # Use current user ID
+      - GROUP_ID=id -g # Use current group ID
     depends_on:
       server-cpu:
         condition: service_healthy
@@ -124,7 +132,7 @@ services:
       - streamlit
 
 volumes:
-  whisper_models:
+  models:
     driver: local
     driver_opts:
       type: none
