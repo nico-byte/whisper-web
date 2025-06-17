@@ -9,6 +9,7 @@
     - [Installation](#installation)
     - [Quick Start](#quick-start)
     - [How it works](#how-it-works)
+    - [Documentation](#documentation)
   - [Deployment](#deployment)
     - [Overview](#overview)
     - [Project Structure](#project-structure)
@@ -25,10 +26,8 @@
     - [Build Issues](#build-issues)
     - [Service Status and Connectivity](#service-status-and-connectivity)
     - [Common Issues](#common-issues)
-    - [Performance Optimization](#performance-optimization)
   - [Monitoring and Maintenance](#monitoring-and-maintenance)
     - [Health Checks](#health-checks)
-    - [Log Management](#log-management)
   - [Security Considerations](#security-considerations)
 
 ## Project Overview
@@ -90,6 +89,10 @@ More on the Makefile tasks in the [Makefile Tasks](#makefile-tasks) section.
 - The Inputstream Generator reads the microphone input and passes it over an event bus to the Whisper Model. The Whisper Model then generates the transcriptions and passes them via the event bus to the server.
 - This is happening in an async event loop so that the Whisper Model can continuously generate
 transcriptions from the provided audio input, generated and processed by the Inputstream Generator.
+
+### Documentation
+
+Documentation can be found [here](https://nico-byte.github.io/whisper-web/).
 
 ## Deployment
 
@@ -349,7 +352,6 @@ docker compose port server-cpu 8000
    - Ensure GPU has sufficient memory (4GB+ recommended)
 
 3. **Streamlit apps not loading:** 
-   - Check browser permissions for WebRTC features
    - Verify server status and connectivity
    - Check firewall settings for ports 8501/8502
 
@@ -361,36 +363,6 @@ docker compose port server-cpu 8000
    - Increase Docker memory limits
    - Use smaller Whisper models (tiny, base, small)
    - Monitor container resource usage with `docker stats`
-
-### Performance Optimization
-
-1. **GPU Support for server-cuda:**
-```yaml
-server-cuda:
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            count: 1
-            capabilities: [gpu]
-      limits:
-        memory: 8G
-```
-
-2. **Memory Limits:**
-```yaml
-server-cpu:
-  mem_limit: 4g
-  memswap_limit: 4g
-  
-server-cuda:
-  mem_limit: 8g
-  memswap_limit: 8g
-```
-
-3. **Model Configuration:**
-   - Use appropriate model sizes for your hardware
 
 ## Monitoring and Maintenance
 
@@ -423,23 +395,6 @@ docker stats
 # Check disk usage for models
 du -sh .models/
 docker system df
-```
-
-### Log Management
-```bash
-# View logs for all services
-make docker.logs
-
-# View logs for specific services
-docker compose logs -f server-cpu
-docker compose logs -f streamlit-upload
-docker compose logs -f cli
-
-# Export logs to file
-docker compose logs --no-color > whisper-web.log
-
-# Follow logs with timestamps
-docker compose logs -f -t
 ```
 
 ## Security Considerations
