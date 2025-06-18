@@ -875,6 +875,19 @@ resource leaks and ensure proper task termination.</p>
 </dd></dl>
 
 <dl class="py class pydantic_model">
+<dt class="sig sig-object py" id="whisper_web.server.InstalledModelsResponse">
+<em class="property"><span class="pre">pydantic</span> <span class="pre">model</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">whisper_web.server.</span></span><span class="sig-name descname"><span class="pre">InstalledModelsResponse</span></span><a class="reference internal" href="_modules/whisper_web/server.html#InstalledModelsResponse"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.server.InstalledModelsResponse" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">BaseModel</span></code></p>
+<p>Response schema for getting all installed models.</p>
+<dl class="py attribute pydantic_field">
+<dt class="sig sig-object py" id="whisper_web.server.InstalledModelsResponse.installed_models">
+<em class="property"><span class="pre">field</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">installed_models</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></em><em class="property"> <span class="pre">[Required]</span></em><a class="headerlink" href="#whisper_web.server.InstalledModelsResponse.installed_models" title="Link to this definition"></a></dt>
+<dd><p>List of all installed models</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class pydantic_model">
 <dt class="sig sig-object py" id="whisper_web.server.MessageResponse">
 <em class="property"><span class="pre">pydantic</span> <span class="pre">model</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">whisper_web.server.</span></span><span class="sig-name descname"><span class="pre">MessageResponse</span></span><a class="reference internal" href="_modules/whisper_web/server.html#MessageResponse"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.server.MessageResponse" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">BaseModel</span></code></p>
@@ -1278,6 +1291,12 @@ It uses the <cite>host</cite> and <cite>port</cite> parameters defined in the cl
 </section>
 <section id="module-whisper_web.utils">
 <span id="whisper-web-utils-module"></span><h2>whisper_web.utils module<a class="headerlink" href="#module-whisper_web.utils" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="whisper_web.utils.get_installed_models">
+<span class="sig-prename descclassname"><span class="pre">whisper_web.utils.</span></span><span class="sig-name descname"><span class="pre">get_installed_models</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/whisper_web/utils.html#get_installed_models"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.utils.get_installed_models" title="Link to this definition"></a></dt>
+<dd><p>Scan the .models folder and return formatted model names.</p>
+</dd></dl>
+
 <dl class="py function">
 <dt class="sig sig-object py" id="whisper_web.utils.set_device">
 <span class="sig-prename descclassname"><span class="pre">whisper_web.utils.</span></span><span class="sig-name descname"><span class="pre">set_device</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">device</span></span></span><a class="reference internal" href="_modules/whisper_web/utils.html#set_device"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#whisper_web.utils.set_device" title="Link to this definition"></a></dt>
