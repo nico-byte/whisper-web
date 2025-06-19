@@ -4,6 +4,9 @@ import sys
 from whisper_web.server import TranscriptionServer
 from whisper_web.whisper_model import ModelConfig
 from app.helper import is_running_in_docker
+from beam import endpoint, Image, Volume, env
+
+BEAM_VOLUME_PATH = "./.models"
 
 # Automatically set HOST based on execution environment
 HOST = "0.0.0.0" if is_running_in_docker() else "127.0.0.1"
@@ -41,6 +44,23 @@ async def monitor_sessions(server: TranscriptionServer, interval: int = 30):
             print(f"Session monitor error: {e}")
 
 
+@endpoint(
+    name="whisper-web",
+    cpu=2,
+    memory="16Gi",
+    gpu="T4",
+    image=Image(
+        base_image="nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04",
+        python_version="python3.10",
+    )
+    .with_envs("HF_HUB_ENABLE_HF_TRANSFER=1"),
+    volumes=[
+        Volume(
+            name="cached_models",
+            mount_path=BEAM_VOLUME_PATH,
+        )
+    ],
+)
 async def main():
     """Main server function."""
     # Create server with default configuration

@@ -33,6 +33,7 @@ services:
       context: .
       dockerfile: docker/DOCKERFILE.server.cuda
     container_name: server-cuda
+    image: §{DOCKER_USERNAME}/whisper-web-server:cuda
     ports:
       - "8000:8000"
     volumes:
