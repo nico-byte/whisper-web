@@ -106,7 +106,7 @@ class TranscriptionManager:
         # Publish transcription update event
         await self.event_bus.publish(TranscriptionUpdated(current_text=self.current_transcription, full_text=self.full_transcription))
 
-    async def run_inference(self, model) -> None:
+    async def run_batched_inference(self, model, batch_size: int = 1, batch_timeout_s: float = 0.1) -> None:
         """Execute the main inference loop for continuous audio processing.
 
         Continuously retrieves audio data from the queue and passes it to the
@@ -124,12 +124,31 @@ class TranscriptionManager:
         - Passes audio tensor and finality flag to model
         """
         while True:
+            batch_audio = []
+            batch_finals = []
+
+            # Get first item (with timeout)
             try:
                 audio_data: tuple[torch.Tensor, bool] = await asyncio.wait_for(self.audio_queue.get(), timeout=1.0)
+                batch_audio.append(audio_data[0])
+                batch_finals.append(audio_data[1])
             except asyncio.TimeoutError:
                 continue
 
-            await model(audio_data)
+            # Collect additional items with short timeout
+            while len(batch_audio) < batch_size:
+                try:
+                    audio_data: tuple[torch.Tensor, bool] = await asyncio.wait_for(self.audio_queue.get(), timeout=batch_timeout_s)
+                    batch_audio.append(audio_data[0])
+                    batch_finals.append(audio_data[1])
+                except asyncio.TimeoutError:
+                    # Timeout reached, process current batch
+                    break
+
+            # Process the batch
+            if batch_audio:
+                batch_data = (batch_audio, batch_finals)
+                await model(batch_data)
 
     @property
     def queue_size(self) -> int:

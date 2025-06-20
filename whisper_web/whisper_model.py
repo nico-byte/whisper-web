@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 from torch import Tensor
 from datetime import datetime
 
-from whisper_web.utils import set_device
+from whisper_web.utils import set_device, process_transcription_timestamps
 from whisper_web.events import EventBus, TranscriptionCompleted
 from whisper_web.types import Transcription
 from transformers.models.whisper import WhisperProcessor, WhisperForConditionalGeneration
@@ -104,6 +104,8 @@ class WhisperModel:
         self.model_size = ""
         self.model_id = ""
 
+        self.last_timestamp = 0.0
+
         self.speech_model: Optional[WhisperForConditionalGeneration] = None
         self.processor: Optional[WhisperProcessor] = None
 
@@ -183,7 +185,7 @@ class WhisperModel:
 
         self.processor = WhisperProcessor.from_pretrained(self.model_id, cache_dir=cache_dir)  # type: ignore
 
-    async def _transcribe(self, audio: Tensor) -> str:
+    async def _transcribe(self, audio: list[Tensor]) -> list[str]:
         """Perform core speech-to-text transcription on audio tensor.
 
         This method handles the complete transcription pipeline from audio preprocessing
@@ -226,30 +228,50 @@ class WhisperModel:
         assert isinstance(self.processor, WhisperProcessor), "Processor must be an instance of WhisperProcessor"
         assert isinstance(self.speech_model, WhisperForConditionalGeneration), "Speechmodel must be instance of WhisperForConditionalGeneration"
 
-        inputs = self.processor(
-            audio,
-            sampling_rate=self.samplerate,
-            return_tensors="pt",
+        try:
+            # TODO: Do this conversion earlier
+            np_audio = [wave.numpy() for wave in audio]  # Ensure audio is in numpy format
+
+            inputs = self.processor(
+                np_audio,
+                truncation=False,
+                padding="longest",
+                return_attention_mask=True,
+                sampling_rate=self.samplerate,
+                return_tensors="pt",
+            )
+            inputs = inputs.to(self.device, dtype=self.torch_dtype)
+        except Exception as e:
+            print(f"Error during audio preprocessing: {e}")
+            print(f"Audio shapes: {[a.shape if hasattr(a, 'shape') else len(a) for a in audio]}")
+            print(f"Audio types: {[type(a) for a in audio]}")
+            return []
+
+        try:
+            generated_ids = await asyncio.to_thread(
+                self.speech_model.generate,
+                **inputs,
+                max_new_tokens=128,
+                num_beams=4,
+                condition_on_prev_tokens=False,
+                temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+                logprob_threshold=-1.0,
+                compression_ratio_threshold=1.35,
+                return_timestamps=True,
+                pad_token_id=self.processor.tokenizer.pad_token_id,  # type: ignore
+                eos_token_id=self.processor.tokenizer.eos_token_id,  # type: ignore
+            )
+        except Exception as e:
+            print(f"Error during model generation: {e}")
+            return []
+
+        results = await asyncio.to_thread(
+            self.processor.batch_decode, generated_ids, skip_special_tokens=True, decode_with_timestamps=True, return_timestamps=True
         )
-        inputs = inputs.to(self.device, dtype=self.torch_dtype)
 
-        generated_ids = await asyncio.to_thread(
-            self.speech_model.generate,
-            **inputs,
-            max_new_tokens=128,
-            num_beams=1,
-            return_timestamps=False,
-            pad_token_id=self.processor.tokenizer.pad_token_id,  # type: ignore
-            eos_token_id=self.processor.tokenizer.eos_token_id,  # type: ignore
-        )
+        return results
 
-        transcript = await asyncio.to_thread(
-            self.processor.batch_decode, generated_ids, skip_special_tokens=True, decode_with_timestamps=False, return_timestamps=False
-        )
-
-        return transcript[-1].strip()
-
-    async def __call__(self, audio_data: Tuple[Tensor, bool]) -> None:
+    async def __call__(self, audio_data: Tuple[list[Tensor], list[bool]]) -> None:
         """Process audio data and publish transcription results via event system.
 
         This method serves as the main entry point for audio transcription, handling
@@ -287,10 +309,28 @@ class WhisperModel:
             This method is typically called automatically by the transcription
             manager's inference loop rather than directly by user code.
         """
-        audio, is_final = audio_data
-        assert isinstance(audio, Tensor), "Audio data must be a torch.Tensor"
+        audio_batch, finals_batch = audio_data
 
-        transcript_text = await self._transcribe(audio)
-        transcription = Transcription(transcript_text, datetime.now().date())
+        assert isinstance(audio_batch, list), "Audio data must be a list"
+        assert all(isinstance(a, Tensor) for a in audio_batch), "All audio items must be PyTorch tensors"
 
-        await self.event_bus.publish(TranscriptionCompleted(transcription=transcription, is_final=is_final))
+        if not audio_data:
+            return  # Nothing to process
+
+        # Perform batch transcription
+        transcriptions = await self._transcribe(audio_batch)
+        transcriptions, self.last_timestamp = process_transcription_timestamps(transcriptions, self.last_timestamp)
+
+        print(f"Transcription: {transcriptions}")
+
+        # Create Transcription objects with timestamps
+        current_time = datetime.now()
+        transcriptions = [Transcription(text.strip(), current_time) for text in transcriptions]
+
+        # Publish all transcription events
+        await asyncio.gather(
+            *[
+                self.event_bus.publish(TranscriptionCompleted(transcription=transcription, is_final=is_final))
+                for transcription, is_final in zip(transcriptions, finals_batch)
+            ]
+        )

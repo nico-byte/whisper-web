@@ -113,7 +113,6 @@ async def stream_audio(session_id: str, manager: AudioManager):
                 final_flag = b"\x01" if is_final else b"\x00"
                 message = final_flag + wav_bytes
                 await ws.send(message)
-                print(f"Sent audio chunk: {len(wav_bytes)} bytes, final: {is_final}")
 
             await asyncio.sleep(0.1)  # Prevent busy waiting
     except websockets.ConnectionClosedError as e:

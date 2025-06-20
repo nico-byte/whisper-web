@@ -196,7 +196,7 @@ class ClientSession:
             stopped using `stop_inference()` for proper cleanup.
         """
         if self.inference_task is None or self.inference_task.done():
-            self.inference_task = asyncio.create_task(self.manager.run_inference(self.model))
+            self.inference_task = asyncio.create_task(self.manager.run_batched_inference(self.model, 3, 0.1))
 
     async def stop_inference(self):
         """Stop the transcription inference task for this session.
@@ -220,6 +220,7 @@ class ClientSession:
             self.inference_task.cancel()
             try:
                 await self.inference_task
+                del self
             except asyncio.CancelledError:
                 pass
 
@@ -370,7 +371,7 @@ class TranscriptionServer:
         for session_id, session in self.client_sessions.items():
             if session.inference_task and session.inference_task.done():
                 if session.inference_task.exception():
-                    print(f"Session {session_id} has failed inference task, marking for cleanup")
+                    print(f"Error in session {session_id}: {session.inference_task.exception()}")
                     inactive_sessions.append(session_id)
 
         for session_id in inactive_sessions:
@@ -431,7 +432,6 @@ class TranscriptionServer:
             try:
                 while True:
                     message_bytes = await websocket.receive_bytes()
-                    print(f"Received {len(message_bytes)} bytes from session {session.session_id}")
 
                     # Unpack the binary protocol: first byte is is_final flag
                     is_final = message_bytes[0] == 1  # First byte indicates if final
@@ -535,6 +535,7 @@ class TranscriptionServer:
         async def delete_session(session_id: str) -> MessageResponse:
             if session_id in self.client_sessions:
                 await self.remove_session(session_id)
+                del self.client_sessions[session_id]
                 return MessageResponse(message=f"Session {session_id} removed successfully", session_id=session_id)
             else:
                 raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND_MSG)
@@ -585,6 +586,7 @@ class TranscriptionServer:
         async def restart_session(session_id: str) -> SessionOperationResponse:
             if session_id not in self.client_sessions:
                 raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND_MSG)
+            del self.client_sessions[session_id]
             session = self.client_sessions[session_id]
 
             # Stop current inference

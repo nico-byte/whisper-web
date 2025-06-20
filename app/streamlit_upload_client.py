@@ -167,7 +167,6 @@ async def stream_audio_file_background(session_id: str, manager: AudioManager, r
 
         # Monitor and send audio chunks
         while True:
-            print(f"Processed chunks: {processed_chunks}, Failed chunks: {failed_chunks}, Total chunks: {total_chunks}")
             if failed_chunks > 10:
                 break  # Assume file is transcribed completely if too many failures
             # Get audio data
@@ -192,7 +191,6 @@ async def stream_audio_file_background(session_id: str, manager: AudioManager, r
                 final_flag = b"\x01" if is_final else b"\x00"
                 message = final_flag + wav_bytes
                 await ws.send(message)
-                print(f"Sent audio chunk: {len(wav_bytes)} bytes, final: {is_final}")
 
                 # Update progress
                 processed_chunks += 1

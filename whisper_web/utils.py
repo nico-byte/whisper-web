@@ -1,5 +1,6 @@
 import os
 import torch
+import re
 
 
 def set_device(device) -> torch.device:
@@ -79,3 +80,40 @@ def get_installed_models():
         return []
 
     return available_models
+
+
+def process_transcription_timestamps(transcriptions: list[str], last_timestamp: float) -> tuple[list[str], float]:
+    """Process transcriptions to maintain timestamp continuity across batches.
+
+    :param transcriptions: List of transcription strings with timestamps
+    :return: List of transcriptions with adjusted timestamps
+    """
+    processed_transcriptions = []
+
+    for transcription in transcriptions:
+        # Extract all timestamps from the transcription
+        timestamp_pattern = r"<\|(\d+\.\d+)\|>"
+        timestamps = re.findall(timestamp_pattern, transcription)
+
+        if not timestamps:
+            processed_transcriptions.append(transcription)
+            continue
+
+        # Convert to float and find the highest timestamp in this transcription
+        float_timestamps = [float(ts) for ts in timestamps]
+        max_timestamp = max(float_timestamps)
+
+        # Adjust all timestamps by adding the last_timestamp offset
+        adjusted_transcription = transcription
+        for ts in timestamps:
+            old_timestamp = f"<|{ts}|>"
+            new_timestamp_value = float(ts) + last_timestamp
+            new_timestamp = f"<|{new_timestamp_value:.2f}|>"
+            adjusted_transcription = adjusted_transcription.replace(old_timestamp, new_timestamp, 1)
+
+        processed_transcriptions.append(adjusted_transcription)
+
+        # Update last_timestamp with the highest timestamp from this batch
+        last_timestamp += max_timestamp
+
+    return processed_transcriptions, last_timestamp
