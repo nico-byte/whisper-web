@@ -86,7 +86,57 @@ make local.run.upload # for server plus streamlit upload app - doesn't support m
 make local.run.cli # for server plus cli client - supports mic input
 ```
 
+Alternatively one can run the docker images:
+
+```bash
+make docker.up.server-cpu-streamlit # for cpu server
+make docker.up.server-cuda-streamlit # for cuda server
+``` 
+
 More on the Makefile tasks in the [Makefile Tasks](#makefile-tasks) section.
+
+### Model Installation and Management
+
+On first startup, no models are installed by default. You can install Whisper models accordingly:
+
+1. Access the Streamlit Upload App at http://localhost:8501
+2. In the model selection field, enter one of the supported model IDs listed below
+3. Click "Create Session" to download and initialize the model
+4. **Important**: Model downloading happens in the background without visual feedback. Session creation may take 2-10 minutes depending on your internet connection and the model size.
+
+#### Supported Model IDs
+
+Whisper Web supports all whisper models available at huggingface but here are some reccomendations:
+
+**English Models:**
+- `distil-whisper/distil-large-v3.5` - **Recommended** - Best accuracy, larger size (~1.5GB)
+- `distil-whisper/distil-medium.en` - Good balance of speed and accuracy (~760MB)
+- `distil-whisper/distil-small.en` - Fastest, smallest size (~240MB)
+
+**German Models:**
+- `primeline/distil-whisper-large-v3-german` - German-optimized model (~1.5GB)
+
+**Multilingual Models:**
+- `openai/whisper-tiny` - Ultra-fast, 39MB, supports 99 languages
+- `openai/whisper-base` - Fast, 140MB, supports 99 languages
+- `openai/whisper-small` - Balanced, 460MB, supports 99 languages
+
+#### Troubleshooting Model Installation
+
+**If session creation takes too long:**
+- Check your internet connection
+- Monitor server logs: `docker compose logs -f server-cpu`
+- Verify disk space availability in the `.models` directory
+
+**If model download fails:**
+- Ensure the model ID is spelled correctly
+- Check HuggingFace Hub connectivity: `curl -I https://huggingface.co`
+- Verify Docker container has internet access
+
+**Storage requirements:**
+- Reserve at least 2GB free disk space for model storage
+- Models are cached in `.models/` directory and persist between restarts
+- Use `du -sh .models/` to check current model storage usage
 
 ### How it works
 
