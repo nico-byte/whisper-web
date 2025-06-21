@@ -32,6 +32,16 @@ The Whisper Web system follows an event-driven, microservice-oriented architectu
 real-time audio processing and transcription. The system is designed with loose coupling between
 components, allowing for scalability and maintainability.
 
+Functional Architecture Overview
+^^^^^^^^^^^^^^^
+
+.. figure:: ../diagrams/func_arch.drawio.png
+   :alt: Whisper Web Functional Architecture Overview
+   :align: center
+   :width: 100%
+
+   Functional architecture overview showing the main components and their interactions
+
 System Architecture
 ^^^^^^^^^^^^^^^^^^
 
