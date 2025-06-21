@@ -35,16 +35,15 @@ docker.build.streamlit:
 	source .env && docker compose build streamlit-upload
 	source .env && docker compose build streamlit-viewer
 
-docker.build.all:
+docker.build.all-cpu:
 	source .env && docker compose build server-cpu
-	source .env && docker compose build server-cuda
 	source .env && docker compose build streamlit-upload
 	source .env && docker compose build streamlit-viewer
 
-docker.clean:
-	source .env && docker compose down -v --remove-orphans
-	source .env && docker system prune -f --volumes
-	source .env && docker image prune -f
+docker.build.all-cuda:
+	source .env && docker compose build server-cuda
+	source .env && docker compose build streamlit-upload
+	source .env && docker compose build streamlit-viewer
 
 # Local development tasks - using the local venv
 local.server:

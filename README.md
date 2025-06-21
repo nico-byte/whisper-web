@@ -66,6 +66,12 @@ Install dependencies via a package manager like uv, in project root:
 uv sync --all-groups --extra cpu # or --extra cu128 for torch with CUDA support
 ```
 
+Setup .env and model cache dir:
+
+```bash
+sh setup.sh
+```
+
 ### Quick Start
 
 After completing the installation, one can now use the transcriber.
@@ -76,8 +82,8 @@ There is also a streamlit viewer client, that shows all active sessions and thei
 Simply start the server and cli/streamlit clients via the Makefile tasks:
 
 ```bash
-make local.run-upload # for server plus streamlit upload app - doesn't support mic input
-make local.run-cli # for server plus cli client - supports mic input
+make local.run.upload # for server plus streamlit upload app - doesn't support mic input
+make local.run.cli # for server plus cli client - supports mic input
 ```
 
 More on the Makefile tasks in the [Makefile Tasks](#makefile-tasks) section.
@@ -141,13 +147,14 @@ whisper-web/
 ├── pytest.ini
 ├── README.md
 ├── ruff.toml
+├── setup.sh
 └── uv.lock
 ```
 
 ## Environment Configuration
 
 ### Environment Variables Template
-Create a `.env` file in the project root with the following variables:
+Create a `.env` file in the project root with the following variables, if not done via setup.sh:
 
 ```env
 # Server Configuration
@@ -172,27 +179,27 @@ The project includes a comprehensive Makefile for common operations:
 
 ```makefile
 # Development tasks
-make format          # Format code with ruff
+make format         # Format code with ruff
 make lint           # Check code with ruff
 make lintfix        # Fix linting issues
 make pytest         # Run tests
 
 # Docker tasks
-make docker.build-all        # Build all Docker images
-make docker.cpu-streamlit    # Start CPU server + Streamlit
-make docker.cuda-streamlit   # Start CUDA server + Streamlit
-make docker.cpu-cli         # Start CPU server + CLI
-make docker.cuda-cli        # Start CUDA server + CLI
-make docker.clean           # Clean up containers and images
-make docker.logs            # View container logs
+make docker.up.server-cpu-streamlit   # Run cpu server + streamlit apps
+make docker.up.server-cuda-streamlit  # Run cuda server ++ streamlit apps
+make docker.build.server-cpu          # Build cpu server
+make docker.build.server-cuda         # Build cuda server
+make docker.build.streamlit           # Build streamlit apps
+make docker.build.all-cpu             # Build all images (cpu server)
+make docker.build.all-cuda            # Build all images (cuda server)
 
 # Local development tasks
 make local.server     # Run server locally
 make local.cli        # Run CLI locally
 make local.viewer     # Run viewer locally
 make local.upload     # Run upload app locally
-make local.run-cli    # Run server + CLI + viewer
-make local.run-upload # Run server + upload app
+make local.run.cli    # Run server + CLI + streamlit viewer app
+make local.run.upload # Run server + streamlit upload app
 ```
 
 ## Deployment Instructions
@@ -214,27 +221,22 @@ cp .env.example .env
 
 2. **Build all Docker images:**
 ```bash
-make docker.build-all
+make docker.build.all-cpu # or ...all-cuda if driver is present
 ```
 
 3. **Start services based on your hardware:**
 
 **CPU-only deployment with Streamlit interface:**
 ```bash
-make docker.cpu-streamlit
+make docker.up.server-cpu-streamlit
 ```
 
 **GPU-accelerated deployment (requires NVIDIA GPU):**
 ```bash
-make docker.cuda-streamlit
+make docker.up.server-cuda-streamlit
 ```
 
-**CLI-focused deployment:**
-```bash
-make docker.cpu-cli    # or docker.cuda-cli for GPU
-```
-
-4. **Access the applications:**
+1. **Access the applications:**
 - **Whisper Web Server**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
 - **Streamlit Upload App**: http://localhost:8501 
@@ -248,15 +250,6 @@ SERVER_TYPE=cpu docker compose --profile cpu up -d
 
 # Start CUDA server + Streamlit apps
 SERVER_TYPE=cuda docker compose --profile cuda --profile streamlit up -d
-
-# View logs for specific services
-make docker.logs
-
-# Stop all services
-make docker.down
-
-# Clean up everything
-make docker.clean
 ```
 
 ### Profile-Based Deployments
@@ -274,12 +267,6 @@ SERVER_TYPE=cpu docker compose --profile cpu --profile streamlit up -d
 
 # Web interface with GPU server
 SERVER_TYPE=cuda docker compose --profile cuda --profile streamlit up -d
-
-# CLI client with CPU server
-SERVER_TYPE=cpu docker compose --profile cpu --profile cli up -d
-
-# CLI client with GPU server
-SERVER_TYPE=cuda docker compose --profile cuda --profile cli up -d
 ```
 
 ### Local Development (without Docker)
@@ -297,22 +284,15 @@ make local.upload    # Streamlit upload app
 make local.viewer    # Streamlit viewer app
 
 # Start combined services
-make local.run-cli     # Server + CLI + Viewer
-make local.run-upload  # Server + Upload app
+make local.run.cli     # Server + CLI + Viewer
+make local.run.upload  # Server + Upload app
 ```
 
 ## Troubleshooting
 
 ### Build Issues
 
-1. **Docker build cache lock errors:**
-```bash
-# Clear build cache and retry
-make docker.clean
-make docker.build-all
-```
-
-2. **CUDA build failures:**
+**CUDA build failures:**
 ```bash
 # Verify NVIDIA Docker runtime
 docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu22.04 nvidia-smi
@@ -326,7 +306,6 @@ nvidia-smi
 1. **Check service status:**
 ```bash
 docker compose ps
-docker compose logs server-cpu  # or server-cuda
 curl -f http://localhost:8000/status
 ```
 
