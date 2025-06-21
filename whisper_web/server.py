@@ -196,7 +196,9 @@ class ClientSession:
             stopped using `stop_inference()` for proper cleanup.
         """
         if self.inference_task is None or self.inference_task.done():
-            self.inference_task = asyncio.create_task(self.manager.run_batched_inference(self.model, 3, 0.1))
+            self.inference_task = asyncio.create_task(
+                self.manager.run_batched_inference(self.model, self.model_config.batch_size, self.model_config.batch_timeout_s)
+            )
 
     async def stop_inference(self):
         """Stop the transcription inference task for this session.

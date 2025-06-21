@@ -37,6 +37,14 @@ class ModelConfig(BaseModel):
     continuous: bool = Field(default=True, description="Whether to generate audio data continuously or not.")
     use_vad: bool = Field(default=False, description="Whether to use VAD (Voice Activity Detection) or not.")
     samplerate: int = Field(default=16000, description="The sample rate of the generated audio.")
+    batch_size: int = Field(
+        default=1,
+        description="The batch size to be used for inference. This is the number of audio chunks processed in parallel.",
+    )
+    batch_timeout_s: float = Field(
+        default=0.1,
+        description="The timeout in seconds for batch processing. If the batch is not filled within this time, it will be processed anyway.",
+    )
 
 
 class WhisperModel:
@@ -186,44 +194,68 @@ class WhisperModel:
         self.processor = WhisperProcessor.from_pretrained(self.model_id, cache_dir=cache_dir)  # type: ignore
 
     async def _transcribe(self, audio: list[Tensor]) -> list[str]:
-        """Perform core speech-to-text transcription on audio tensor.
+        """Perform batch speech-to-text transcription on audio tensors with timestamps.
 
-        This method handles the complete transcription pipeline from audio preprocessing
-        to text generation using the loaded Whisper model. It includes device placement,
-        async processing, and optimized generation parameters.
+        This method handles the complete batch transcription pipeline from audio preprocessing
+        to text generation using the loaded Whisper model. It includes tensor-to-numpy conversion,
+        device placement, async processing, and optimized generation parameters with timestamp
+        extraction for accurate temporal alignment.
 
-        :param audio: Raw audio tensor with shape (samples,) at the configured sample rate
-        :type audio: :class:`Tensor`
-        :return: Transcribed text with leading/trailing whitespace removed
-        :rtype: :class:`str`
+        :param audio: List of audio tensors, each with shape (samples,) at the configured sample rate
+        :type audio: list[Tensor]
+        :return: List of transcribed texts with embedded timestamps in Whisper format
+        :rtype: list[str]
 
         **Processing Pipeline:**
 
-        1. **Audio Preprocessing**: Converts audio tensor to model input format
-        2. **Device Placement**: Moves inputs to appropriate device with correct dtype
-        3. **Text Generation**: Uses optimized parameters for fast, accurate transcription
-        4. **Post-processing**: Decodes tokens to text and cleans output
+        1. **Tensor Conversion**: Converts PyTorch tensors to numpy arrays for processor compatibility
+        2. **Audio Preprocessing**: Batch processes audio with longest padding and attention masks
+        3. **Device Placement**: Moves inputs to appropriate device with correct dtype
+        4. **Text Generation**: Uses optimized parameters for accurate transcription with timestamps
+        5. **Post-processing**: Decodes tokens to text with embedded timestamp markers
 
         **Generation Parameters:**
 
         - `max_new_tokens=128`: Limits output length for efficiency
-        - `num_beams=1`: Greedy decoding for speed
-        - `return_timestamps=False`: Text-only output
+        - `num_beams=4`: Beam search for better quality (increased from 1)
+        - `return_timestamps=True`: Enables timestamp generation in output
+        - `temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0)`: Temperature fallback for robustness
+        - `logprob_threshold=-1.0`: Log probability threshold for quality control
+        - `compression_ratio_threshold=1.35`: Compression ratio filtering
         - Proper padding and EOS token handling
+
+        **Timestamp Output Format:**
+
+        - Returns text with embedded timestamps: `<|0.00|> text <|2.34|> more text`
+        - Timestamps represent seconds from audio start
+        - Used for temporal alignment and continuity across batches
+
+        **Batch Processing:**
+
+        - Processes multiple audio samples simultaneously for efficiency
+        - Uses longest padding strategy for variable-length inputs
+        - Maintains batch coherence through attention masks
 
         **Async Processing:**
 
-        - Model inference runs in thread pool to avoid blocking
+        - Model inference runs in thread pool to avoid blocking event loop
         - Token decoding also runs async for consistent performance
         - Maintains responsiveness during heavy computation
+
+        **Error Handling:**
+
+        - Comprehensive error handling for preprocessing and generation stages
+        - Detailed error logging with audio shape and type information
+        - Graceful degradation with empty list return on errors
 
         .. note::
             This method assumes valid audio input and properly initialized model/processor.
             Input validation is performed by the calling method.
 
         .. warning::
-            Large audio inputs may consume significant GPU memory. Consider chunking
-            very long audio sequences for memory-constrained environments.
+            Large audio batches may consume significant GPU memory. Monitor memory usage
+            with large batch sizes to avoid out-of-memory errors. Batch size affects both
+            memory consumption and processing efficiency.
         """
         assert isinstance(self.processor, WhisperProcessor), "Processor must be an instance of WhisperProcessor"
         assert isinstance(self.speech_model, WhisperForConditionalGeneration), "Speechmodel must be instance of WhisperForConditionalGeneration"
@@ -272,42 +304,56 @@ class WhisperModel:
         return results
 
     async def __call__(self, audio_data: Tuple[list[Tensor], list[bool]]) -> None:
-        """Process audio data and publish transcription results via event system.
+        """Process batch of audio data and publish transcription results via event system.
 
-        This method serves as the main entry point for audio transcription, handling
-        input validation, transcription processing, and result publication through
-        the event bus. It's designed to be called by the transcription manager.
+        This method serves as the main entry point for batch audio transcription, handling
+        input validation, batch transcription processing, timestamp continuity, and result
+        publication through the event bus. It's designed to be called by the transcription
+        manager with batched audio data.
 
-        :param audio_data: Tuple containing audio tensor and finality flag
-        :type audio_data: Tuple[Tensor, bool]
+        :param audio_data: Tuple containing list of audio tensors and list of finality flags
+        :type audio_data: Tuple[list[Tensor], list[bool]]
 
         **Parameters:**
 
-        - `audio_data[0]`: Audio tensor with shape (samples,) at configured sample rate
-        - `audio_data[1]`: Boolean flag indicating if this is the final audio chunk
+        - `audio_data[0]`: List of audio tensors, each with shape (samples,) at configured sample rate
+        - `audio_data[1]`: List of boolean flags indicating if each audio chunk is final
 
         **Processing Flow:**
 
-        1. **Input Validation**: Ensures audio data is a valid PyTorch tensor
-        2. **Transcription**: Calls internal transcription method with audio tensor
-        3. **Result Packaging**: Creates Transcription object with text and timestamp
-        4. **Event Publication**: Publishes TranscriptionCompleted event with results
+        1. **Input Validation**: Ensures audio data is a valid list of PyTorch tensors
+        2. **Batch Transcription**: Calls internal transcription method with audio tensor batch
+        3. **Timestamp Processing**: Maintains timestamp continuity across batches using last_timestamp
+        4. **Result Packaging**: Creates Transcription objects with processed text and timestamps
+        5. **Event Publication**: Publishes TranscriptionCompleted events for all batch results
 
         **Event Publication:**
 
         - Event Type: `TranscriptionCompleted`
-        - Payload: Transcription object with text and current date
-        - Finality Flag: Passed through from input parameters
+        - Payload: Transcription object with processed text and current timestamp
+        - Finality Flags: Passed through from input parameters for each batch item
+
+        **Timestamp Continuity:**
+
+        - Processes embedded timestamps from Whisper output
+        - Maintains continuity across batches by tracking last_timestamp
+        - Ensures timestamps don't restart at 0.00 for each new batch
 
         **Error Handling:**
 
-        - Validates tensor input with assertion
+        - Validates tensor batch input with assertions
         - Async processing handles model inference errors
         - Event publication errors propagate to caller
+        - Early return for empty batches
 
         .. note::
-            This method is typically called automatically by the transcription
-            manager's inference loop rather than directly by user code.
+            This method processes multiple audio samples in a single batch for efficiency.
+            It's typically called automatically by the transcription manager's inference
+            loop rather than directly by user code.
+
+        .. warning::
+            The batch size affects GPU memory usage. Monitor memory consumption with
+            large batches to avoid out-of-memory errors.
         """
         audio_batch, finals_batch = audio_data
 

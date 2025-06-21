@@ -107,21 +107,64 @@ class TranscriptionManager:
         await self.event_bus.publish(TranscriptionUpdated(current_text=self.current_transcription, full_text=self.full_transcription))
 
     async def run_batched_inference(self, model, batch_size: int = 1, batch_timeout_s: float = 0.1) -> None:
-        """Execute the main inference loop for continuous audio processing.
+        """Execute the main batched inference loop for continuous audio processing.
 
-        Continuously retrieves audio data from the queue and passes it to the
-        specified model for transcription. Handles timeouts gracefully to prevent
-        blocking when no audio is available.
+        Continuously retrieves audio data from the queue and processes it in batches
+        for improved efficiency. Collects multiple audio samples up to the specified
+        batch size before passing them to the model for transcription. Handles timeouts
+        gracefully to prevent blocking and ensures timely processing even with partial batches.
 
-        :param model: Async callable model that processes audio tensors
-        :type model: :class:`Callable[[Tuple[torch.Tensor, bool]], Awaitable[None]]`
+        :param model: Async callable model that processes batched audio tensors
+        :type model: Callable[[Tuple[list[torch.Tensor], list[bool]]], Awaitable[None]]
+        :param batch_size: Maximum number of audio samples to collect per batch
+        :type batch_size: int
+        :param batch_timeout_s: Timeout in seconds for collecting additional batch items
+        :type batch_timeout_s: float
 
-        **Behavior:**
+        **Batching Strategy:**
 
-        - Runs indefinitely until manually stopped
-        - Waits up to 1 second for audio data before timing out
-        - Continues processing after timeouts without error
-        - Passes audio tensor and finality flag to model
+        - Waits up to 1 second for the first audio sample to avoid busy waiting
+        - Collects additional samples with shorter timeout (batch_timeout_s) for responsiveness
+        - Processes partial batches when timeout is reached or batch_size is filled
+        - Maintains separate lists for audio tensors and finality flags
+
+        **Processing Flow:**
+
+        1. **Initial Wait**: Blocks up to 1s for first audio sample
+        2. **Batch Collection**: Gathers additional samples with short timeout
+        3. **Batch Processing**: Sends complete batch to model as tuple of lists
+        4. **Continuous Loop**: Repeats indefinitely for real-time processing
+
+        **Timeout Behavior:**
+
+        - Long timeout (1s) for first item prevents CPU spinning when queue is empty
+        - Short timeout (batch_timeout_s) for additional items ensures low latency
+        - Graceful handling of timeouts without error propagation
+        - Processes partial batches immediately when collection timeout occurs
+
+        **Batch Format:**
+
+        - Model receives: `(list[torch.Tensor], list[bool])`
+        - First list contains audio tensors for batch processing
+        - Second list contains corresponding finality flags
+        - Maintains order correspondence between tensors and flags
+
+        **Performance Benefits:**
+
+        - Reduced model invocation overhead through batching
+        - Improved GPU utilization with parallel processing
+        - Lower per-sample processing latency at scale
+        - Configurable batch size for memory/latency trade-offs
+
+        .. note::
+            This method runs indefinitely and should be executed in a separate task
+            or thread. The batch_size parameter affects both memory usage and processing
+            efficiency - larger batches improve throughput but increase latency.
+
+        .. warning::
+            Large batch sizes may cause GPU memory issues. Monitor memory consumption
+            and adjust batch_size accordingly. The method will block if the audio queue
+            is consistently empty.
         """
         while True:
             batch_audio = []
