@@ -66,10 +66,12 @@ cpu = [
 cu128 = [
   "torch>=2.7.0",
   "torchaudio>=0.22.0",
+  "numba>=0.61.2",
 ]
 cu118 = [
   "torch>=2.7.0",
   "torchaudio>=0.22.0",
+  "numba>=0.61.2",
 ]
 
 [tool.uv]

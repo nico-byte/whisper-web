@@ -200,6 +200,28 @@ class ClientSession:
                 self.manager.run_batched_inference(self.model, self.model_config.batch_size, self.model_config.batch_timeout_s)
             )
 
+    def _cleanup_model(self):
+        """Properly cleanup model and free VRAM."""
+        if hasattr(self, "model") and self.model is not None:
+            try:
+                # Use synchronous cleanup method
+                self.model.cleanup()
+            except Exception as e:
+                print(f"Error during model cleanup: {e}")
+
+            self.model = None
+
+            # Additional cleanup
+            import gc
+            import torch
+
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+
+            print(f"Session {self.session_id} model cleanup completed")
+
     async def stop_inference(self):
         """Stop the transcription inference task for this session.
 
@@ -222,9 +244,11 @@ class ClientSession:
             self.inference_task.cancel()
             try:
                 await self.inference_task
-                del self
             except asyncio.CancelledError:
                 pass
+
+        # Clean up model resources
+        self._cleanup_model()
 
     async def handle_model_download(self, event: DownloadModel):
         """Handle model download progress events for this session.
@@ -244,6 +268,13 @@ class ClientSession:
         """
         self.is_downloading = not event.is_finished
         print(f"Model download {'started' if not event.is_finished else 'finished'} for session {self.session_id}")
+
+    async def cleanup(self):
+        """Cleanup resources when the session is deleted."""
+        if hasattr(self, "inference_task") and self.inference_task:
+            await self.stop_inference()
+
+        print(f"Session {getattr(self, 'session_id', 'unknown')} resources cleaned up")
 
 
 class TranscriptionServer:
@@ -341,8 +372,9 @@ class TranscriptionServer:
         if session_id in self.client_sessions:
             session = self.client_sessions[session_id]
             await session.stop_inference()
-            del self.client_sessions[session_id]
+            await session.cleanup()
             print(f"Session {session_id} removed and cleaned up")
+            del self.client_sessions[session_id]
 
     async def cleanup_inactive_sessions(self):
         """Remove sessions with failed or completed inference tasks.
@@ -536,8 +568,8 @@ class TranscriptionServer:
         @self.app.delete("/sessions/{session_id}", summary="Remove a transcription session", response_model=MessageResponse)
         async def delete_session(session_id: str) -> MessageResponse:
             if session_id in self.client_sessions:
+                print(f"Removing session {session_id}")
                 await self.remove_session(session_id)
-                del self.client_sessions[session_id]
                 return MessageResponse(message=f"Session {session_id} removed successfully", session_id=session_id)
             else:
                 raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND_MSG)
@@ -588,7 +620,7 @@ class TranscriptionServer:
         async def restart_session(session_id: str) -> SessionOperationResponse:
             if session_id not in self.client_sessions:
                 raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND_MSG)
-            del self.client_sessions[session_id]
+
             session = self.client_sessions[session_id]
 
             # Stop current inference

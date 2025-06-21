@@ -2433,10 +2433,12 @@ cpu = [
     { name = "torchaudio", version = "2.7.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-11-whisper-web-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-11-whisper-web-cpu') or (sys_platform == 'darwin' and extra == 'extra-11-whisper-web-cpu' and extra == 'extra-11-whisper-web-cu118') or (sys_platform == 'darwin' and extra == 'extra-11-whisper-web-cpu' and extra == 'extra-11-whisper-web-cu128') or (sys_platform == 'darwin' and extra == 'extra-11-whisper-web-cu118' and extra == 'extra-11-whisper-web-cu128') or (sys_platform == 'linux' and extra == 'extra-11-whisper-web-cpu' and extra == 'extra-11-whisper-web-cu118') or (sys_platform == 'linux' and extra == 'extra-11-whisper-web-cpu' and extra == 'extra-11-whisper-web-cu128') or (extra != 'extra-11-whisper-web-cpu' and extra == 'extra-11-whisper-web-cu118' and extra == 'extra-11-whisper-web-cu128')" },
 ]
 cu118 = [
+    { name = "numba" },
     { name = "torch", version = "2.7.1+cu118", source = { registry = "https://download.pytorch.org/whl/cu118" } },
     { name = "torchaudio", version = "2.7.1+cu118", source = { registry = "https://download.pytorch.org/whl/cu118" } },
 ]
 cu128 = [
+    { name = "numba" },
     { name = "torch", version = "2.7.1+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" } },
     { name = "torchaudio", version = "2.7.1", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-11-whisper-web-cu128') or (platform_machine != 'aarch64' and extra == 'extra-11-whisper-web-cu118' and extra == 'extra-11-whisper-web-cu128') or (sys_platform != 'linux' and extra == 'extra-11-whisper-web-cu118' and extra == 'extra-11-whisper-web-cu128') or (extra == 'extra-11-whisper-web-cpu' and extra == 'extra-11-whisper-web-cu118') or (extra == 'extra-11-whisper-web-cpu' and extra == 'extra-11-whisper-web-cu128')" },
     { name = "torchaudio", version = "2.7.1+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine != 'aarch64' and extra == 'extra-11-whisper-web-cu128') or (sys_platform != 'linux' and extra != 'extra-11-whisper-web-cu118' and extra == 'extra-11-whisper-web-cu128') or (sys_platform != 'linux' and extra != 'extra-11-whisper-web-cpu' and extra == 'extra-11-whisper-web-cu128') or (extra == 'extra-11-whisper-web-cpu' and extra == 'extra-11-whisper-web-cu118') or (extra == 'extra-11-whisper-web-cpu' and extra == 'extra-11-whisper-web-cu128') or (extra == 'extra-11-whisper-web-cu118' and extra == 'extra-11-whisper-web-cu128')" },
@@ -2479,6 +2481,8 @@ streamlit = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numba", marker = "extra == 'cu118'", specifier = ">=0.61.2" },
+    { name = "numba", marker = "extra == 'cu128'", specifier = ">=0.61.2" },
     { name = "pydantic", specifier = ">=2.11.3" },
     { name = "soundfile", specifier = ">=0.13.1" },
     { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.7.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "whisper-web", extra = "cpu" } },

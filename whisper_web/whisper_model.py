@@ -1,5 +1,6 @@
 import torch
 import asyncio
+import gc
 
 from pydantic import BaseModel, Field
 from typing import Optional, Tuple
@@ -11,9 +12,6 @@ from whisper_web.events import EventBus, TranscriptionCompleted
 from whisper_web.types import Transcription
 from transformers.models.whisper import WhisperProcessor, WhisperForConditionalGeneration
 from transformers import logging
-from dotenv import load_dotenv
-
-load_dotenv()
 
 logging.set_verbosity_error()
 
@@ -380,3 +378,104 @@ class WhisperModel:
                 for transcription, is_final in zip(transcriptions, finals_batch)
             ]
         )
+
+    def _cleanup(self):
+        """Properly cleanup model resources and free VRAM/memory.
+
+        This method handles the complete cleanup of the Whisper model, including
+        moving tensors to CPU, clearing CUDA cache, and performing garbage collection
+        to ensure all GPU memory is properly released.
+
+        **Cleanup Process:**
+
+        1. **Model Cleanup**: Moves model to CPU and deletes references
+        2. **Processor Cleanup**: Clears processor and tokenizer references
+        3. **CUDA Cache**: Empties CUDA cache and synchronizes GPU
+        4. **Garbage Collection**: Forces Python garbage collection
+        5. **State Reset**: Resets internal state variables
+
+        **Memory Management:**
+
+        - Moves all model tensors from GPU to CPU before deletion
+        - Clears CUDA cache to free GPU memory immediately
+        - Forces garbage collection to release Python object memory
+        - Synchronizes CUDA operations to ensure cleanup completion
+
+        .. note::
+            This method should be called before deleting the WhisperModel instance
+            to ensure proper cleanup of GPU resources.
+
+        .. warning::
+            After calling this method, the model instance becomes unusable.
+            Any subsequent transcription calls will fail.
+        """
+        print("Cleaning up WhisperModel resources...")
+
+        # Clean up speech model
+        if hasattr(self, "speech_model") and self.speech_model is not None:
+            try:
+                # Move model to CPU before deletion
+                if hasattr(self.speech_model, "to"):
+                    self.speech_model.to("cpu")
+
+                # Delete model reference
+                del self.speech_model
+                self.speech_model = None
+                print("Speech model cleaned up")
+            except Exception as e:
+                print(f"Error cleaning up speech model: {e}")
+
+        # Clean up processor
+        if hasattr(self, "processor") and self.processor is not None:
+            try:
+                # Clean up tokenizer if it exists
+                if hasattr(self.processor, "tokenizer") and self.processor.tokenizer is not None:
+                    del self.processor.tokenizer
+
+                del self.processor
+                self.processor = None
+                print("Processor cleaned up")
+            except Exception as e:
+                print(f"Error cleaning up processor: {e}")
+
+        # Reset internal state
+        self.last_timestamp = 0.0
+        self.model_id = ""
+        self.model_size = ""
+        self.available_model_sizes = []
+
+        # Force garbage collection
+        gc.collect()
+
+        # Clear CUDA cache if available
+        if torch.cuda.is_available():
+            try:
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                print("CUDA cache cleared")
+            except Exception as e:
+                print(f"Error clearing CUDA cache: {e}")
+
+        print("WhisperModel cleanup completed")
+
+    def cleanup(self):
+        """Cleanup resources when the model is deleted."""
+        try:
+            self._cleanup()
+        except Exception as e:
+            print(f"Error during WhisperModel destructor cleanup: {e}")
+            # Fallback cleanup
+            try:
+                if hasattr(self, "speech_model") and self.speech_model is not None:
+                    if hasattr(self.speech_model, "to"):
+                        self.speech_model.to("cpu")
+                    del self.speech_model
+
+                if hasattr(self, "processor") and self.processor is not None:
+                    del self.processor
+
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception as e:
+                print(f"Error during fallback cleanup: {e}")
