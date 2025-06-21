@@ -436,3 +436,11 @@ docker system df
 3. **User permissions:** Client runs as non-root user when possible
 
 This deployment provides a complete, scalable solution for the Whisper Web transcription system with proper containerization and networking.
+
+## TODOs
+  - Fix runtime error when using multilingual Whisper models:
+    RuntimeError: Tried to instantiate class '__path__._path', but it does not exist!
+    Ensure the model is correctly registered with torch::class_.
+    Also resolve input shape errors like
+    Whisper expects the mel input features to be of length 3000, but found 2500
+    by padding mel features to 3000, only important for multilingual model support.
