@@ -35,7 +35,7 @@ components, allowing for scalability and maintainability.
 Functional Architecture Overview
 ^^^^^^^^^^^^^^^
 
-.. figure:: ../diagrams/func_arch.png
+.. figure:: ../diagrams/func_arch.drawio.png
    :alt: Whisper Web Functional Architecture Overview
    :align: center
    :width: 100%
