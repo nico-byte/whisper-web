@@ -26,6 +26,7 @@ dev = [
   "ruff>=0.11.5",
   "sphinx>=8.2.3",
   "sphinx-rtd-theme>=3.0.2",
+  "httpx>=0.28.1",
 ]
 
 # Server dependencies (FastAPI server with ML inference)
@@ -52,10 +53,8 @@ streamlit = [
   "requests>=2.31.0",
 ]
 
-# HTTP client dependencies (for web requests)
-http = [
-  "httpx>=0.28.1",
-  "requests>=2.31.0",
+gradio = [
+  "gradio>=5.34.2",
 ]
 
 [project.optional-dependencies]
