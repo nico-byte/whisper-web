@@ -35,6 +35,13 @@ server = [
   "transformers>=4.51.3",
   "accelerate>=0.33.0",
   "websockets>=15.0.1",
+  "deepmultilingualpunctuation>=1.0.1",
+  "omegaconf>=2.3.0",
+  "torchaudio>=2.7.1",
+  "ctc-forced-aligner>=1.0.2",
+  "nltk>=3.9.2",
+  "yt-dlp>=2025.12.8",
+  "pyannote-audio>=3.4.0",
 ]
 
 # Client dependencies (CLI and audio capture clients)

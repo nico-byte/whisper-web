@@ -1,20 +1,21 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-import uvicorn
-import threading
 import asyncio
-import torchaudio
 import io
+import os
+import threading
 import uuid
-from typing import Optional, Dict, List
 from datetime import datetime
+from typing import Dict, List, Optional
+
+import torchaudio
+import uvicorn
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from whisper_web.whisper_model import ModelConfig, WhisperModel
+from whisper_web.events import AudioChunkReceived, DownloadModel, EventBus
 from whisper_web.management import TranscriptionManager
-from whisper_web.events import EventBus, AudioChunkReceived, DownloadModel
 from whisper_web.types import AudioChunk
 from whisper_web.utils import get_installed_models
-
+from whisper_web.whisper_model import ModelConfig, WhisperModel
 
 # Constants
 SESSION_NOT_FOUND_MSG = "Session not found"
@@ -213,6 +214,7 @@ class ClientSession:
 
             # Additional cleanup
             import gc
+
             import torch
 
             gc.collect()
@@ -488,6 +490,164 @@ class TranscriptionServer:
 
             except Exception as e:
                 print(f"Error in WebSocket for session {session.session_id}: {e}")
+
+        @self.app.websocket("/ws/transcribe_local/{session_id}")
+        async def websocket_endpoint_local_with_endpoint(websocket: WebSocket, session_id: str):
+            await websocket.accept()
+
+            # Get or create session
+            session = self.get_or_create_session(session_id)
+            print(f"WebSocket connection accepted for session: {session.session_id}")
+
+            # Expect the client to first send a YouTube URL (text)
+            try:
+                yt_url = await websocket.receive_text()
+            except Exception as e:
+                await websocket.close()
+                print(f"Failed to receive YouTube URL for session {session.session_id}: {e}")
+                return
+
+            # Download audio from YouTube into a temporary directory
+            import asyncio
+            import glob
+            import shutil
+            import tempfile
+
+            import yt_dlp
+
+            temp_dir = None
+            audio_path = None
+            try:
+                temp_dir = tempfile.mkdtemp(prefix=f"ws_yt_{session.session_id}_")
+                outtmpl = os.path.join(temp_dir, "audio.%(ext)s")
+                ydl_opts = {
+                    "format": "bestaudio/best",
+                    "outtmpl": outtmpl,
+                    "postprocessors": [
+                        {
+                            "key": "FFmpegExtractAudio",
+                            "preferredcodec": "wav",
+                            "preferredquality": "192",
+                        }
+                    ],
+                    "quiet": True,
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([yt_url])
+
+                wav_files = glob.glob(os.path.join(temp_dir, "*.wav"))
+                if not wav_files:
+                    await websocket.send_text("Error: no WAV file produced from YouTube download")
+                    await websocket.close()
+                    return
+                audio_path = wav_files[0]
+            except Exception as e:
+                await websocket.send_text(f"Error downloading audio: {e}")
+                await websocket.close()
+                print(f"Error downloading audio for session {session.session_id}: {e}")
+                if temp_dir and os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                return
+
+            # Prepare generator and manager to chunk the downloaded audio
+            from whisper_web.events import AudioChunkReceived
+            from whisper_web.inputstream_generator import GeneratorConfig, InputStreamGenerator
+            from whisper_web.management import AudioManager
+
+            # Use the session's event bus so components are linked to this session
+            event_bus = session.event_bus
+
+            generator_config = GeneratorConfig(from_file=audio_path)
+            audio_manager = AudioManager(event_bus)
+            generator = InputStreamGenerator(generator_config, event_bus)
+
+            # Start inference loop for this session if not already running
+            await session.start_inference()
+
+            try:
+                # Start audio generation (it will emit AudioChunkGenerated / AudioChunkNum events)
+                audio_task = asyncio.create_task(generator.process_audio())
+
+                # Pull generated chunks from the local AudioManager and forward them to the session
+                while True:
+                    item = await audio_manager.get_next_audio_chunk()
+                    if item is None:
+                        # If generator finished and no more items, break
+                        if audio_task.done():
+                            break
+                        await asyncio.sleep(0.2)
+                        continue
+
+                    chunk, is_final = item
+                    # Forward as AudioChunkReceived to the session event bus (TranscriptionManager will enqueue)
+                    await event_bus.publish(AudioChunkReceived(chunk=chunk, is_final=is_final))
+
+                    if is_final:
+                        # last chunk for this file
+                        break
+
+                # Wait for generator to finish
+                await audio_task
+
+                # Wait for transcription manager to produce final transcription
+                final_text = ""
+                # Poll for up to 120 seconds for full transcription
+                timeout_s = 120
+                waited = 0
+                while waited < timeout_s:
+                    full = session.manager.full_transcription
+                    if full and full.strip():
+                        final_text = full
+                        break
+                    await asyncio.sleep(1.0)
+                    waited += 1
+
+                # If we have a final transcript, run diarization to attach speakers and timestamps
+                if final_text:
+                    try:
+                        import json
+
+                        import torchaudio
+
+                        from whisper_web.diarization.diarization import DiarizationEngine
+
+                        # Load audio and resample if needed to session samplerate
+                        waveform, sr = torchaudio.load(audio_path)
+                        waveform = waveform.squeeze(0)
+                        target_sr = getattr(session.model_config, "samplerate", 16000)
+                        if sr != target_sr:
+                            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=target_sr)
+                            waveform = resampler(waveform.unsqueeze(0)).squeeze(0)
+
+                        audio_np = waveform.detach().cpu().numpy()
+
+                        diarizer = DiarizationEngine(device=getattr(session.model_config, "device", "cuda"), diarizer_type="msdd")
+                        diarization_result = diarizer.diarize(audio_np, final_text, language=getattr(session.model_config, "language", "en"))
+
+                        payload = {
+                            "final_transcription": final_text,
+                            "transcript_with_speakers": diarization_result.get("transcript_with_speakers", ""),
+                            "word_speaker_mapping": diarization_result.get("word_speaker_mapping", []),
+                            "speaker_segments": diarization_result.get("speaker_segments", []),
+                        }
+
+                        await websocket.send_text(json.dumps(payload))
+                    except Exception as e:
+                        print(f"Diarization failed for session {session.session_id}: {e}")
+                        # fallback: send plain final text
+                        await websocket.send_text(final_text or "")
+                else:
+                    await websocket.send_text("")
+
+            except WebSocketDisconnect:
+                print(f"WebSocket disconnected for session: {session.session_id}")
+            except Exception as e:
+                print(f"Error streaming/download for session {session.session_id}: {e}")
+                await websocket.send_text(f"Error during processing: {e}")
+            finally:
+                # Clean up temp files
+                if temp_dir and os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
 
     def _setup_api_routes(self):
         """Configure all HTTP API routes for the FastAPI application.

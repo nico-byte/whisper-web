@@ -1,19 +1,22 @@
-import streamlit as st
 import asyncio
-import websockets
-import soundfile as sf
 import io
-import tempfile
+import json
 import os
-import requests
+import tempfile
 import threading
 import time
 from datetime import datetime
 from typing import Optional
+
+import requests
+import soundfile as sf
+import streamlit as st
+import websockets
+
+from app.helper import get_server_urls
+from whisper_web.events import EventBus
 from whisper_web.inputstream_generator import GeneratorConfig, InputStreamGenerator
 from whisper_web.management import AudioManager
-from whisper_web.events import EventBus
-from app.helper import get_server_urls
 
 API_BASE_URL, WS_BASE_URL = get_server_urls()
 
@@ -265,6 +268,40 @@ def get_installed_models() -> list:
         return []
 
 
+async def transcribe_youtube_ws(session_id: str, yt_url: str, timeout: int = 180) -> dict:
+    """Connect to `/ws/transcribe_local/{session_id}`, send a YouTube URL, and return the diarized transcription payload.
+
+    Returns a dict parsed from JSON or a dict with `final_transcription` on plain text.
+    """
+    uri = f"{WS_BASE_URL}/ws/transcribe_local/{session_id}"
+    try:
+        async with websockets.connect(uri, max_size=None) as ws:
+            await ws.send(yt_url)
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=timeout)
+            except asyncio.TimeoutError:
+                return {"error": "timeout waiting for transcription"}
+
+            # Try to parse JSON payload, otherwise return as plain transcription
+            try:
+                payload = json.loads(msg)
+            except Exception:
+                payload = {"final_transcription": msg}
+
+            return payload
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def transcribe_youtube(session_id: str, yt_url: str, timeout: int = 180) -> dict:
+    """Sync wrapper around `transcribe_youtube_ws` for use in Streamlit.
+
+    Example:
+        result = transcribe_youtube(session_id, "https://youtu.be/...")
+    """
+    return asyncio.run(transcribe_youtube_ws(session_id, yt_url, timeout=timeout))
+
+
 def display_transcriptions():
     """Display current and final transcriptions with queue status."""
     if st.session_state["session_id"]:
@@ -416,6 +453,38 @@ if not st.session_state["session_id"]:
     4. **View Results**: Watch the transcriptions appear in real-time
     """)
 else:
+    # YouTube transcription section
+    st.header("▶️ YouTube Transcription")
+
+    yt_url = st.text_input("YouTube URL", value="", help="Paste a YouTube link to transcribe")
+    if st.button("Transcribe YouTube", key="yt_transcribe"):
+        if not st.session_state.get("session_id"):
+            st.error("Please create a session first in the sidebar.")
+        elif not yt_url or not yt_url.strip():
+            st.error("Please enter a valid YouTube URL.")
+        else:
+            with st.spinner("Downloading and transcribing YouTube audio..."):
+                result = transcribe_youtube(st.session_state["session_id"], yt_url.strip(), timeout=600)
+
+            if result.get("error"):
+                st.error(f"Transcription failed: {result['error']}")
+            else:
+                # Show diarized transcript when available
+                if result.get("transcript_with_speakers"):
+                    st.markdown("### 🧑‍🤝‍🧑 Diarized Transcript")
+                    st.text_area("Diarized Transcript", value=result.get("transcript_with_speakers", ""), height=300)
+                else:
+                    st.markdown("### ✅ Final Transcription")
+                    st.text_area("Final Transcription", value=result.get("final_transcription", ""), height=200)
+
+                if result.get("speaker_segments"):
+                    with st.expander("Speaker segments (timestamps)"):
+                        st.json(result.get("speaker_segments"))
+
+                if result.get("word_speaker_mapping"):
+                    with st.expander("Word -> Speaker mapping"):
+                        st.write(result.get("word_speaker_mapping"))
+
     # File upload section
     st.header("📁 Audio File Upload")
 

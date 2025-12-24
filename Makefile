@@ -47,7 +47,7 @@ docker.build.all-cuda:
 
 # Local development tasks - using the local venv
 local.server:
-	source .env && source ./.venv/bin/activate && ./.venv/bin/python -m app.server
+	uv sync --group server --group client --extra cpu --python python3.12 && source .env && source ./.venv/bin/activate && ./.venv/bin/python -m app.server
 
 local.cli:
 	source .env && source ./.venv/bin/activate && ./.venv/bin/python -m app.cli
@@ -56,7 +56,7 @@ local.viewer:
 	source .env && source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_viewer_client.py --server.address 127.0.0.1
 
 local.upload:
-	source .env && source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_upload_client.py --server.address 127.0.0.1
+	uv sync --group streamlit --group client --group http --extra cpu --python python3.12 && source .env && source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_upload_client.py --server.address 127.0.0.1
 
 local.run.cli:
 	@echo "Starting server and cli..."
