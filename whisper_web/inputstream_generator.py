@@ -7,15 +7,19 @@ from pydantic import BaseModel, Field
 from typing import AsyncGenerator
 import soundfile as sf
 import resampy
-from datetime import datetime
 
+import logging
 from whisper_web.events import EventBus, AudioChunkGenerated, AudioChunkNum
 from whisper_web.types import AudioChunk
+
+logger = logging.getLogger(__name__)
+
+torch.set_num_threads(1)
 
 try:
     import sounddevice as sd
 except OSError as e:
-    print(e)
+    logger.error(e)
     print("If `GLIBCXX_x.x.x' not found, try installing it with: conda install -c conda-forge libstdcxx-ng=12")
     sys.exit()
 
@@ -36,7 +40,7 @@ class GeneratorConfig(BaseModel):
         description="The size of each individual audio chunk.",
     )
     max_length_s: int = Field(
-        default=25,
+        default=30,
         description="The maximum length of the audio data.",
     )
     adjustment_time: int = Field(
@@ -126,6 +130,9 @@ class InputStreamGenerator:
 
         self.phrase_delta_blocks: int = int((self.samplerate // self.blocksize) * generator_config.phrase_delta)
         self.silence_threshold = -1
+
+        self.vad_model, utils = torch.hub.load(repo_or_dir="snakers4/silero-vad", model="silero_vad")
+        (self.get_speech_timestamps, _, self.read_audio, _, _) = utils
 
         self.max_blocksize = generator_config.max_length_s * self.samplerate
         self.max_chunks = generator_config.max_length_s * self.samplerate / self.blocksize
@@ -218,24 +225,86 @@ class InputStreamGenerator:
             data = resampy.resample(data.astype(np.float32), samplerate, self.samplerate)
             data = (data * 32767).astype(np.float32)
 
+        wav = torch.from_numpy(data.flatten().astype("float32"))
+        speech_timestamps = self.get_speech_timestamps(
+            wav, self.vad_model, sampling_rate=self.samplerate, max_speech_duration_s=self.max_blocksize / self.samplerate
+        )
+
         # Mono conversion (just take first channel)
         if data.ndim > 1:
             data = data[:, 0]
 
-        num_chunks = int(np.ceil(len(data) / self.max_blocksize))
-        print(f"Processing file {file_path} with {num_chunks} chunks of size {self.max_blocksize}")
+        print(data.shape)
+
+        cut_timestamps = await asyncio.to_thread(self._cut_audio_track, data, speech_timestamps)
+        logger.info(f"Cut segments: {len(cut_timestamps)}")
+
+        num_chunks = len(cut_timestamps)
+
+        logger.info(f"Processing file {file_path} with {num_chunks} chunks of size {self.max_blocksize} samples each.")
         await self.event_bus.publish(AudioChunkNum(num_chunks=num_chunks))
 
         # Yield chunks of blocksize
-        for i in range(0, len(data), self.max_blocksize):
-            chunk = data[i : i + self.max_blocksize]  # type: ignore
-
-            # Pad the last chunk if it's too short
-            if len(chunk) < self.max_blocksize:
-                chunk = np.pad(chunk, (0, self.max_blocksize - len(chunk)), "constant", constant_values=0)  # type: ignore
+        first_timestamp = True
+        for timestamps in cut_timestamps:
+            chunk = data[timestamps["start"] : timestamps["end"]]  # type: ignore
 
             self.global_ndarray = chunk
-            await self.send_audio(True)
+            # TODO: Find out where this delay comes from
+            await self.send_audio(
+                start_time=timestamps["start"] + ((800 * 16000) / 1000) if not first_timestamp else timestamps["start"], is_final=True
+            )
+            first_timestamp = False
+
+    def _cut_audio_track(self, data: np.ndarray, speech_timestamps: list) -> list:
+        """Cuts the audio track into segments based on speech timestamps.
+
+        This method takes the full audio data and a list of speech timestamps,
+        and returns a list of audio segments corresponding to the detected speech.
+
+        :param data: The full audio data as a numpy array
+        :type data: :class:`np.ndarray`
+        :param speech_timestamps: List of dictionaries with 'start' and 'end' keys indicating speech segments
+        :type speech_timestamps: :class:`list`
+        :return: List of audio segments as numpy arrays
+        :rtype: :class:`list`
+        """
+        cut_timestamps = []
+        current_start = None
+        previous_end = None
+
+        for t in speech_timestamps:
+            if current_start is None:
+                # Start a new cut segment
+                current_start = 0
+                previous_end = t["end"]
+            else:
+                gap_from_previous = t["start"] - previous_end
+
+                while gap_from_previous > self.max_blocksize:
+                    # If the gap itself is larger than max_blocksize, cut chunks
+                    cut_timestamps.append({"start": current_start, "end": current_start + self.max_blocksize})
+                    # Move to next chunk
+                    current_start = current_start + self.max_blocksize + 1
+                    gap_from_previous = t["start"] - current_start
+
+                potential_duration = t["end"] - current_start
+
+                if potential_duration > self.max_blocksize:
+                    # Cut at the previous segment's end
+                    cut_timestamps.append({"start": current_start, "end": previous_end})
+                    # Start new segment with current timestamp
+                    current_start = previous_end + 1
+                    previous_end = t["end"]
+                else:
+                    # Can still add more, just update the previous_end
+                    previous_end = t["end"]
+
+        # Don't forget the last segment
+        if current_start is not None:
+            cut_timestamps.append({"start": current_start, "end": previous_end})
+
+        return cut_timestamps
 
     async def process_with_heuristic(self) -> None:
         """Continuously processes audio input, detects significant speech segments, and dispatches them for transcription.
@@ -261,7 +330,7 @@ class InputStreamGenerator:
             ending_silence = np.mean(indata_flattened[-500:-1]) <= self.silence_threshold  # type: ignore
             starting_silence = np.mean(indata_flattened[:500]) <= self.silence_threshold  # type: ignore
 
-            print(f"Silence: {silence}, Starting Silence: {starting_silence}, Ending Silence: {ending_silence}")
+            logger.info(f"Silence: {silence}, Starting Silence: {starting_silence}, Ending Silence: {ending_silence}")
 
             # Process the global ndarray if the max chunks are met
             if self.global_ndarray.size / self.blocksize == self.max_chunks:
@@ -290,9 +359,9 @@ class InputStreamGenerator:
 
             empty_blocks = 0
 
-            await self.send_audio() if self.global_ndarray.size / self.blocksize >= self.min_chunks else None
+            await self.send_audio(start_time=0) if self.global_ndarray.size / self.blocksize >= self.min_chunks else None
 
-    async def send_audio(self, is_final: bool = False) -> None:
+    async def send_audio(self, start_time, is_final: bool = False) -> None:
         """Dispatches the collected audio buffer for transcription after normalization.
 
         This method converts the internal audio buffer (`self.global_ndarray`) from
@@ -305,7 +374,7 @@ class InputStreamGenerator:
         """
         # Normalize int16 to float32 waveform in range [-1.0, 1.0]
         waveform = torch.from_numpy(self.global_ndarray.flatten().astype("float32") / 32768.0)
-        audio_chunk = AudioChunk(data=waveform, timestamp=datetime.now())
+        audio_chunk = AudioChunk(data=waveform, start_time=start_time)
         # Publish the audio chunk event
         await self.event_bus.publish(AudioChunkGenerated(audio_chunk, is_final))
 
@@ -341,5 +410,5 @@ class InputStreamGenerator:
             # Stop recording after ADJUSTMENT_TIME seconds
             if blocks_processed >= self.adjustment_time * (self.samplerate / self.blocksize):
                 self.silence_threshold = float(np.mean(loudness_values))  # type: ignore
-                print(f"Silence threshold set to {self.silence_threshold}")
+                logger.info(f"Silence threshold set to {self.silence_threshold}")
                 break

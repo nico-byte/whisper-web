@@ -1,20 +1,31 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-import uvicorn
-import threading
 import asyncio
-import torchaudio
+import glob
 import io
+import os
+import shutil
+import tempfile
+import threading
 import uuid
-from typing import Optional, Dict, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from typing import Dict, List, Optional
 
-from whisper_web.whisper_model import ModelConfig, WhisperModel
+import torchaudio
+import uvicorn
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+import yt_dlp
+
+from whisper_web.diarization.diarization import DiarizationEngine
+from whisper_web.events import AudioChunkReceived, DiarizationCompleted, DownloadModel, EventBus
 from whisper_web.management import TranscriptionManager
-from whisper_web.events import EventBus, AudioChunkReceived, DownloadModel
 from whisper_web.types import AudioChunk
 from whisper_web.utils import get_installed_models
+from whisper_web.whisper_model import ModelConfig, WhisperModel
+import logging
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Constants
 SESSION_NOT_FOUND_MSG = "Session not found"
@@ -160,8 +171,8 @@ class ClientSession:
     :type manager: :class:`TranscriptionManager`
     :ivar model: Whisper model instance for speech recognition
     :type model: :class:`WhisperModel`
-    :ivar inference_task: Async task running the inference loop
-    :type inference_task: :class:`Optional[asyncio.Task]`
+    :ivar transcribe_task: Async task running the inference loop
+    :type transcribe_task: :class:`Optional[asyncio.Task]`
     :ivar is_downloading: Flag indicating if model is currently downloading
     :type is_downloading: :class:`bool`
     """
@@ -171,13 +182,18 @@ class ClientSession:
         self.model_config = model_config
         self.event_bus = EventBus()
         self.manager = TranscriptionManager(self.event_bus)
-        self.model = WhisperModel(model_config, self.event_bus)
-        self.inference_task: Optional[asyncio.Task] = None
+        self.model = WhisperModel(model_config, self.event_bus, session_id=self.session_id)
+        self.diarizer = DiarizationEngine(
+            event_bus=self.event_bus,
+            device=getattr(self.model_config, "device", "mps"),
+        )
+        self.transcribe_task: Optional[asyncio.Task] = None
+        self.diarization_task: Optional[asyncio.Task] = None
         self.is_downloading: bool = False
 
         self.event_bus.subscribe(DownloadModel, self.handle_model_download)  # type: ignore
 
-    async def start_inference(self):
+    async def start_transcribe_task(self):
         """Start the transcription inference task for this session.
 
         Creates and starts an async task that runs the main inference loop,
@@ -195,10 +211,15 @@ class ClientSession:
             The inference task runs in the background and must be explicitly
             stopped using `stop_inference()` for proper cleanup.
         """
-        if self.inference_task is None or self.inference_task.done():
-            self.inference_task = asyncio.create_task(
+        if self.transcribe_task is None or self.transcribe_task.done():
+            self.transcribe_task = asyncio.create_task(
                 self.manager.run_batched_inference(self.model, self.model_config.batch_size, self.model_config.batch_timeout_s)
             )
+
+    async def start_diarization_task(self):
+        """ """
+        if self.diarization_task is None or self.diarization_task.done():
+            self.diarization_task = asyncio.create_task(self.manager.run_diarization(self.diarizer))
 
     def _cleanup_model(self):
         """Properly cleanup model and free VRAM."""
@@ -207,12 +228,13 @@ class ClientSession:
                 # Use synchronous cleanup method
                 self.model.cleanup()
             except Exception as e:
-                print(f"Error during model cleanup: {e}")
+                logger.exception(f"Error during model cleanup: {e}")
 
             self.model = None
 
             # Additional cleanup
             import gc
+
             import torch
 
             gc.collect()
@@ -220,7 +242,7 @@ class ClientSession:
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
 
-            print(f"Session {self.session_id} model cleanup completed")
+            logger.info(f"Session {self.session_id} model cleanup completed")
 
     async def stop_inference(self):
         """Stop the transcription inference task for this session.
@@ -240,12 +262,19 @@ class ClientSession:
             This method should be called during session cleanup to prevent
             resource leaks and ensure proper task termination.
         """
-        if self.inference_task and not self.inference_task.done():
-            self.inference_task.cancel()
+        if self.transcribe_task and not self.transcribe_task.done():
+            self.transcribe_task.cancel()
             try:
-                await self.inference_task
+                await self.transcribe_task
             except asyncio.CancelledError:
-                pass
+                return
+
+        if self.diarization_task and not self.diarization_task.done():
+            self.diarization_task.cancel()
+            try:
+                await self.diarization_task
+            except asyncio.CancelledError:
+                return
 
         # Clean up model resources
         self._cleanup_model()
@@ -267,14 +296,14 @@ class ClientSession:
         - Logs download status changes for monitoring
         """
         self.is_downloading = not event.is_finished
-        print(f"Model download {'started' if not event.is_finished else 'finished'} for session {self.session_id}")
+        logger.info(f"Model download {'started' if not event.is_finished else 'finished'} for session {self.session_id}")
 
     async def cleanup(self):
         """Cleanup resources when the session is deleted."""
-        if hasattr(self, "inference_task") and self.inference_task:
+        if hasattr(self, "transcribe_task") and self.transcribe_task:
             await self.stop_inference()
 
-        print(f"Session {getattr(self, 'session_id', 'unknown')} resources cleaned up")
+        logger.info(f"Session {getattr(self, 'session_id', 'unknown')} resources cleaned up")
 
 
 class TranscriptionServer:
@@ -314,6 +343,16 @@ class TranscriptionServer:
         self.host = host
         self.port = port
         self.app = FastAPI()
+
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[
+                "http://localhost:8080",  # React / Vite / Next dev server
+            ],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
         # Dictionary to store client sessions
         self.client_sessions: Dict[str, ClientSession] = {}
@@ -373,7 +412,7 @@ class TranscriptionServer:
             session = self.client_sessions[session_id]
             await session.stop_inference()
             await session.cleanup()
-            print(f"Session {session_id} removed and cleaned up")
+            logger.infoi(f"Session {session_id} removed and cleaned up")
             del self.client_sessions[session_id]
 
     async def cleanup_inactive_sessions(self):
@@ -403,13 +442,58 @@ class TranscriptionServer:
         """
         inactive_sessions = []
         for session_id, session in self.client_sessions.items():
-            if session.inference_task and session.inference_task.done():
-                if session.inference_task.exception():
-                    print(f"Error in session {session_id}: {session.inference_task.exception()}")
+            if session.transcribe_task and session.transcribe_task.done():
+                if session.transcribe_task.exception():
+                    logger.exception(f"Error in session {session_id}: {session.transcribe_task.exception()}")
                     inactive_sessions.append(session_id)
 
         for session_id in inactive_sessions:
             await self.remove_session(session_id)
+
+    async def download_youtube_audio(self, websocket, session_id: str, send_message) -> Optional[tuple[str, str]]:
+        try:
+            # Receive YouTube URL
+            yt_url = await websocket.receive_text()
+
+            # Download audio
+            temp_dir = None
+            audio_path = None
+            try:
+                temp_dir = tempfile.mkdtemp(prefix=f"ws_yt_{session_id}_")
+                outtmpl = os.path.join(temp_dir, "audio.%(ext)s")
+                ydl_opts = {
+                    "format": "bestaudio/best",
+                    "outtmpl": outtmpl,
+                    "postprocessors": [
+                        {
+                            "key": "FFmpegExtractAudio",
+                            "preferredcodec": "wav",
+                            "preferredquality": "192",
+                        }
+                    ],
+                    "quiet": True,
+                }
+
+                await send_message("status", {"message": "Downloading audio..."})
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([yt_url])
+
+                wav_files = glob.glob(os.path.join(temp_dir, "*.wav"))
+                if not wav_files:
+                    await send_message("error", {"message": "No WAV file produced"})
+                    return
+                audio_path = wav_files[0]
+                return audio_path, temp_dir
+
+            except Exception as e:
+                await send_message("error", {"message": f"Download failed: {e}"})
+                if temp_dir and os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                return
+        except Exception as e:
+            logger.error(f"Error downloading YouTube audio: {e}")
+            return None
 
     def _setup_ws_route(self):
         """Configure WebSocket route for real-time audio streaming and transcription.
@@ -458,10 +542,11 @@ class TranscriptionServer:
 
             # Get or create session
             session = self.get_or_create_session(session_id)
-            print(f"WebSocket connection accepted for session: {session.session_id}")
+            logger.info(f"WebSocket connection accepted for session: {session.session_id}")
 
             # Start inference task for this session
-            await session.start_inference()
+            await session.start_transcribe_task()
+            await session.start_diarization_task()
 
             try:
                 while True:
@@ -484,10 +569,103 @@ class TranscriptionServer:
                     await session.event_bus.publish(AudioChunkReceived(chunk=audio_chunk, is_final=is_final))
 
             except WebSocketDisconnect:
-                print(f"WebSocket disconnected for session: {session.session_id}")
+                logger.exception(f"WebSocket disconnected for session: {session.session_id}")
 
             except Exception as e:
-                print(f"Error in WebSocket for session {session.session_id}: {e}")
+                logger.exception(f"Error in WebSocket for session {session.session_id}: {e}")
+
+        @self.app.websocket("/ws/transcribe_local/{session_id}")
+        async def websocket_endpoint_local_with_endpoint(websocket: WebSocket, session_id: str):
+            await websocket.accept()
+            session = self.get_or_create_session(session_id)
+            event_bus = session.event_bus
+
+            async def send_message(msg_type: str, data: dict):
+                try:
+                    await websocket.send_json({"type": msg_type, **data})
+                except (WebSocketDisconnect, RuntimeError):
+                    pass
+
+            previous_diarization = None
+
+            async def on_diarization_completed(event: DiarizationCompleted):
+                # Here we send partials or diarized chunks as they become ready
+                nonlocal previous_diarization
+                diarized_transcript = event.result
+                if diarized_transcript != previous_diarization:
+                    await send_message(
+                        "delta_update",
+                        {
+                            "speaker_segments": diarized_transcript.get("speaker_segments", []),
+                            "word_speaker_mapping": diarized_transcript.get("word_speaker_mapping", []),
+                            "sentence_speaker_mapping": diarized_transcript.get("sentence_speaker_mapping", []),
+                            "transcript_with_speakers": diarized_transcript.get("transcript_with_speakers", ""),
+                        },
+                    )
+                    previous_diarization = diarized_transcript
+
+            event_bus.subscribe(DiarizationCompleted, on_diarization_completed)
+
+            try:
+                # 1. Audio Download Logic
+                audio_path, temp_dir = await self.download_youtube_audio(websocket, session_id, send_message)
+                if not audio_path:
+                    return
+
+                # 2. Setup Components
+                from whisper_web.events import AudioChunkReceived
+                from whisper_web.inputstream_generator import GeneratorConfig, InputStreamGenerator
+                from whisper_web.management import AudioManager
+
+                generator = InputStreamGenerator(GeneratorConfig(from_file=audio_path), event_bus)
+                audio_manager = AudioManager(event_bus)
+
+                await session.start_transcribe_task()
+                await session.start_diarization_task()
+                await send_message("status", {"message": "Processing started."})
+
+                # 3. Define the Consumer Task
+                # This task listens for processed events and pushes them to the UI immediately
+
+                # 4. Run everything concurrently
+                # - generator.process_audio(): Feeds raw audio into the bus
+                # - diarizer.run_streaming(): Listens to audio + transcriptions on the bus
+                # - event_consumer(): Pushes results to WebSocket
+
+                # This loop handles the manual audio feeding logic from your original snippet
+                async def audio_feeder():
+                    audio_task = asyncio.create_task(generator.process_audio())
+                    while True:
+                        item = await audio_manager.get_next_audio_chunk()
+                        if item is None:
+                            if session.manager.processed_chunks >= audio_manager.num_chunks:
+                                break
+                            await asyncio.sleep(0.1)
+                            continue
+
+                        chunk, is_final = item
+                        await event_bus.publish(AudioChunkReceived(chunk=chunk, is_final=is_final))
+                    await audio_task
+
+                # Run the feeder and wait for it to finish
+                (await audio_feeder(),)
+
+                # Allow a small buffer for final diarization segments to clear
+                await asyncio.sleep(1.0)
+
+                # 5. Finalize
+                # final_payload = {
+                #     "final_transcription": session.manager.full_transcription,
+                #     "speaker_segments": diarizer.get_collected_segments() # Helper method
+                # }
+                await send_message("complete", {})
+
+            except WebSocketDisconnect:
+                logger.exception(f"Session {session.session_id} disconnected.")
+            finally:
+                # Cleanup tasks and files
+                if temp_dir and os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
 
     def _setup_api_routes(self):
         """Configure all HTTP API routes for the FastAPI application.
@@ -568,7 +746,7 @@ class TranscriptionServer:
         @self.app.delete("/sessions/{session_id}", summary="Remove a transcription session", response_model=MessageResponse)
         async def delete_session(session_id: str) -> MessageResponse:
             if session_id in self.client_sessions:
-                print(f"Removing session {session_id}")
+                logger.info(f"Removing session {session_id}")
                 await self.remove_session(session_id)
                 return MessageResponse(message=f"Session {session_id} removed successfully", session_id=session_id)
             else:
@@ -580,7 +758,7 @@ class TranscriptionServer:
                 SessionInfo(
                     session_id=session.session_id,
                     model_configuration=session.model_config.model_dump(),
-                    inference_running=session.inference_task is not None and not session.inference_task.done(),
+                    inference_running=session.transcribe_task is not None and not session.transcribe_task.done(),
                     transcription_count=len(session.manager.transcriptions),
                     current_transcription=session.manager.current_transcription,
                     audio_queue_size=session.manager.queue_size,
@@ -597,7 +775,7 @@ class TranscriptionServer:
             return SessionStatusResponse(
                 session_id=session_id,
                 is_downloading=session.is_downloading,
-                inference_running=session.inference_task is not None and not session.inference_task.done(),
+                inference_running=session.transcribe_task is not None and not session.transcribe_task.done(),
                 audio_queue_size=session.manager.queue_size,
                 audio_queue_processed=session.manager.processed_chunks,
                 transcription_count=len(session.manager.transcriptions),
@@ -627,12 +805,13 @@ class TranscriptionServer:
             await session.stop_inference()
 
             # Start new inference
-            await session.start_inference()
+            await session.start_transcribe_task()
+            await session.start_diarization_task()
 
             return SessionOperationResponse(
                 session_id=session_id,
                 message="Inference restarted successfully",
-                inference_running=session.inference_task is not None and not session.inference_task.done(),
+                inference_running=session.transcribe_task is not None and not session.transcribe_task.done(),
             )
 
     def _setup_transcription_routes(self):

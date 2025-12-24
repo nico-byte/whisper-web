@@ -1,11 +1,8 @@
 import asyncio
 import io
 import json
-import os
-import tempfile
 import threading
 import time
-from datetime import datetime
 from typing import Optional
 
 import requests
@@ -41,6 +38,10 @@ if "streaming_progress" not in st.session_state:
     st.session_state["streaming_progress"] = 0
 if "background_result" not in st.session_state:
     st.session_state["background_result"] = None
+if "last_error" not in st.session_state:
+    st.session_state["last_error"] = None
+if "last_traceback" not in st.session_state:
+    st.session_state["last_traceback"] = None
 
 
 def create_session(model_args) -> Optional[str]:
@@ -215,46 +216,6 @@ async def stream_audio_file_background(session_id: str, manager: AudioManager, r
         raise RuntimeError(f"Error during background audio streaming: {str(e)}")
 
 
-def get_session_transcriptions(session_id: str):
-    """Fetch current and final transcriptions for a specific session."""
-    try:
-        # Fetch current transcription
-        current_response = requests.get(f"{API_BASE_URL}/sessions/{session_id}/transcription/current", timeout=3)
-        current_response.raise_for_status()
-        current_data = current_response.json()
-
-        # Fetch final transcription
-        final_response = requests.get(f"{API_BASE_URL}/sessions/{session_id}/transcription/final", timeout=3)
-        final_response.raise_for_status()
-        final_data = final_response.json()
-
-        # Fetch session status (including queue size)
-        status_response = requests.get(f"{API_BASE_URL}/sessions/{session_id}/status", timeout=3)
-        status_response.raise_for_status()
-        status_data = status_response.json()
-
-        return {
-            "current": current_data.get("current_transcription", ""),
-            "final": final_data.get("final_transcription", ""),
-            "is_active": status_data.get("inference_running", False),
-            "queue_size": status_data.get("audio_queue_size", 0),
-            "processed_chunks": status_data.get("audio_queue_processed", 0),
-            "error": None,
-            "last_updated": datetime.now(),
-        }
-
-    except requests.RequestException as e:
-        return {
-            "current": "",
-            "final": "",
-            "queue_size": 0,
-            "is_active": False,
-            "processed_chunks": 0,
-            "error": str(e),
-            "last_updated": datetime.now(),
-        }
-
-
 def get_installed_models() -> list:
     """Get the list of installed models from the server."""
     try:
@@ -269,35 +230,43 @@ def get_installed_models() -> list:
 
 
 async def transcribe_youtube_ws(session_id: str, yt_url: str, timeout: int = 600) -> dict:
-    """Connect to `/ws/transcribe_local/{session_id}`, send a YouTube URL, and return the diarized transcription payload.
-
-    Returns a dict parsed from JSON or a dict with `final_transcription` on plain text.
-    """
+    """Connect to `/ws/transcribe_local/{session_id}`, send a YouTube URL, and return the diarized transcription payload."""
     uri = f"{WS_BASE_URL}/ws/transcribe_local/{session_id}"
-    try:
-        async with websockets.connect(uri, max_size=None) as ws:
-            await ws.send(yt_url)
-            try:
-                msg = await asyncio.wait_for(ws.recv(), timeout=timeout)
-            except asyncio.TimeoutError:
-                return {"error": "timeout waiting for transcription"}
 
-            async with websockets.connect(uri, max_size=None, ping_interval=20, ping_timeout=timeout + 30) as ws:
-                await ws.send(yt_url)
+    try:
+        async with websockets.connect(uri, max_size=None, ping_interval=20, ping_timeout=timeout + 30) as ws:
+            await ws.send(yt_url)
+
+            deadline = asyncio.get_event_loop().time() + timeout
+
+            while asyncio.get_event_loop().time() < deadline:
+                remaining = deadline - asyncio.get_event_loop().time()
+
                 try:
-                    msg = await asyncio.wait_for(ws.recv(), timeout=timeout)
+                    msg = await asyncio.wait_for(ws.recv(), timeout=max(remaining, 0))
                 except asyncio.TimeoutError:
                     return {"error": "timeout waiting for transcription"}
                 except websockets.exceptions.ConnectionClosed as e:
                     return {"error": f"WebSocket connection closed: {str(e)}"}
 
-            # Try to parse JSON payload, otherwise return as plain transcription
-            try:
-                payload = json.loads(msg)
-            except Exception:
-                payload = {"final_transcription": msg}
+                # Skip empty messages
+                if not msg or not msg.strip():
+                    continue
 
-            return payload
+                # Try JSON parse
+                try:
+                    payload = json.loads(msg)
+                    # Skip heartbeats (adjust condition based on your heartbeat format)
+                    if payload.get("type") == "heartbeat" or payload.get("heartbeat") is True:
+                        continue
+                    # Got a real message, return it
+                    return payload
+                except json.JSONDecodeError:
+                    # Not JSON, assume it's the final transcription
+                    return {"final_transcription": msg}
+
+            return {"error": "timeout waiting for transcription"}
+
     except Exception as e:
         return {"error": str(e)}
 
@@ -309,74 +278,6 @@ def transcribe_youtube(session_id: str, yt_url: str, timeout: int = 180) -> dict
         result = transcribe_youtube(session_id, "https://youtu.be/...")
     """
     return asyncio.run(transcribe_youtube_ws(session_id, yt_url, timeout=timeout))
-
-
-def display_transcriptions():
-    """Display current and final transcriptions with queue status."""
-    if st.session_state["session_id"]:
-        # Update transcription data
-        st.session_state["transcription_data"] = get_session_transcriptions(st.session_state["session_id"])
-
-        data = st.session_state["transcription_data"]
-
-        # Show error if any
-        if data.get("error"):
-            st.error(f"⚠️ Error: {data['error']}")
-            return
-
-        # Display queue status and metrics
-        col_metrics1, col_metrics2, col_metrics3 = st.columns(3)
-
-        with col_metrics1:
-            queue_size = data.get("queue_size", 0)
-            assert isinstance(queue_size, int), "Queue size must be an integer"
-            if queue_size == 0:
-                st.session_state["needs_refresh"] = False
-            else:
-                st.session_state["needs_refresh"] = True
-            st.metric(label="📊 Queue Size", value=queue_size, delta=None if queue_size == 0 else f"{queue_size} pending")
-
-        with col_metrics2:
-            is_active = data.get("is_active", False)
-            status_indicator = "🟢 Active" if is_active else "🔴 Inactive"
-            st.metric(label="🔌 Session Status", value=status_indicator)
-
-        with col_metrics3:
-            processed_chunks = data.get("processed_chunks", 0)
-            assert isinstance(processed_chunks, int), "Processed chunks must be an integer"
-            st.metric(label="📦 Processed Chunks", value=processed_chunks)
-
-        # Display transcriptions
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("### 🔄 Current Transcription")
-            current_text = data.get("current", "") or ""
-            current_text = current_text.strip() if isinstance(current_text, str) else ""
-            if current_text:
-                st.info(current_text)
-
-        with col2:
-            st.markdown("### ✅ Final Transcription")
-            final_text = data.get("final", "") or ""
-            final_text = final_text.strip() if isinstance(final_text, str) else ""
-            if final_text:
-                st.success(final_text)
-
-        # Show timestamp and queue details
-        last_updated = data.get("last_updated")
-        assert isinstance(last_updated, datetime), "Last updated must be datetime"
-
-        status_info = []
-        if last_updated and hasattr(last_updated, "strftime"):
-            status_info.append(f"Last updated: {last_updated.strftime('%H:%M:%S')}")
-        elif isinstance(last_updated, str):
-            status_info.append(f"Last updated: {last_updated}")
-        elif last_updated:
-            status_info.append(f"Last updated: {str(last_updated)}")
-
-        if status_info:
-            st.caption(" | ".join(status_info))
 
 
 # Sidebar controls
@@ -462,6 +363,14 @@ if not st.session_state["session_id"]:
     4. **View Results**: Watch the transcriptions appear in real-time
     """)
 else:
+    # Error / Traceback display box
+    if st.session_state.get("last_error") or st.session_state.get("last_traceback"):
+        st.markdown("### ⚠️ Last error / traceback")
+        tb_text = st.session_state.get("last_error", "")
+        tb_extra = st.session_state.get("last_traceback", "")
+        if tb_extra:
+            tb_text = f"{tb_text}\n\n{tb_extra}"
+        st.text_area("Error & Traceback", value=tb_text, height=240)
     # YouTube transcription section
     st.header("▶️ YouTube Transcription")
 
@@ -476,8 +385,14 @@ else:
                 result = transcribe_youtube(st.session_state["session_id"], yt_url.strip(), timeout=600)
 
             if result.get("error"):
-                st.error(f"Transcription failed: {result['error']}")
+                # store/display error + optional traceback from server
+                st.session_state["last_error"] = result.get("error", "")
+                st.session_state["last_traceback"] = result.get("traceback", "")
+                st.error(f"Transcription failed: {result.get('error')}")
             else:
+                # clear last error on success
+                st.session_state["last_error"] = ""
+                st.session_state["last_traceback"] = ""
                 # Show diarized transcript when available
                 if result.get("transcript_with_speakers"):
                     st.markdown("### 🧑‍🤝‍🧑 Diarized Transcript")
@@ -493,100 +408,6 @@ else:
                 if result.get("word_speaker_mapping"):
                     with st.expander("Word -> Speaker mapping"):
                         st.write(result.get("word_speaker_mapping"))
-
-    # File upload section
-    st.header("📁 Audio File Upload")
-
-    uploaded_file = st.file_uploader(
-        "Choose an audio file", type=["wav", "mp3", "flac", "aac", "m4a", "ogg"], help="Upload an audio file to transcribe"
-    )
-
-    if uploaded_file is not None:
-        # Save uploaded file to temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            temp_file_path = tmp_file.name
-
-        # Display file info
-        st.success(f"✅ File uploaded: {uploaded_file.name}")
-
-        # Audio player
-        st.audio(uploaded_file.getvalue(), format=f"audio/{uploaded_file.name.split('.')[-1]}")
-
-        # Transcription controls
-        if not st.session_state["is_streaming"]:
-            st.info("📤 Ready to start background transcription")
-        else:
-            if st.session_state.get("streaming_thread") and st.session_state["streaming_thread"].is_alive():
-                st.warning("⏳ Transcription running in background...")
-            else:
-                st.success("✅ Background transcription completed")
-
-        # Progress and transcription display
-        if st.session_state["is_streaming"]:
-            # Check if background thread is still running
-            if st.session_state.get("streaming_thread") and st.session_state["streaming_thread"].is_alive():
-                # Get status from background result holder
-                result_holder = st.session_state.get("background_result")
-                if result_holder:
-                    status = result_holder.get_status()
-                    progress = status["progress"]
-
-                    progress_bar = st.progress(progress / 100.0)
-                    status_text = st.empty()
-                    status_text.text(f"Processing audio file in background... {progress}%")
-
-                    # Auto-refresh to update progress
-                else:
-                    st.error("Background streaming status unavailable")
-                    st.session_state["is_streaming"] = False
-            else:
-                # Background streaming completed - check results
-                result_holder = st.session_state.get("background_result")
-                if result_holder:
-                    status = result_holder.get_status()
-
-                    if status["error"]:
-                        st.error(f"❌ Streaming failed: {status['error']}")
-                    elif status["progress"] == 100:
-                        st.session_state["websocket_connection"] = status["websocket_connection"]
-                        st.success("✅ File processed! WebSocket connection active. Check transcriptions below.")
-                    else:
-                        st.success("✅ File processed! Check transcriptions below.")
-
-                st.session_state["is_streaming"] = False
-                st.session_state["streaming_progress"] = 0
-                st.session_state["background_result"] = None
-
-        elif uploaded_file is not None and not st.session_state["is_streaming"]:
-            # Start background streaming
-            if st.session_state["transcription_data"].get("queue_size") == 0:
-                if st.session_state.get("session_id") and st.button("🎯 Start Background Transcription", type="primary"):
-                    st.session_state["is_streaming"] = True
-                    st.session_state["streaming_progress"] = 0
-
-                    # Create result holder for thread-safe communication
-                    result_holder = BackgroundStreamResult()
-                    st.session_state["background_result"] = result_holder
-
-                    # Start streaming in background thread
-                    streaming_thread = threading.Thread(
-                        target=run_async_stream_wrapper, args=(st.session_state["session_id"], temp_file_path, result_holder), daemon=True
-                    )
-                    streaming_thread.start()
-                    st.session_state["streaming_thread"] = streaming_thread
-
-                    st.rerun()
-
-        # Clean up temp file if not streaming
-        elif "temp_file_path" in locals() and os.path.exists(temp_file_path):
-            os.unlink(temp_file_path)
-
-    # Transcription display section
-    st.header("📝 Transcription Results")
-
-    # Always display transcriptions first
-    display_transcriptions()
 
     # Auto-refresh controls (only show if session exists)
     if st.session_state["session_id"]:

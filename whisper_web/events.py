@@ -1,7 +1,7 @@
 import asyncio
 from abc import ABC
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from whisper_web.types import AudioChunk, Transcription
 
@@ -46,6 +46,25 @@ class TranscriptionUpdated(Event):
 class DownloadModel(Event):
     model_url: str
     is_finished: bool = False
+
+
+@dataclass
+class DiarizationRequest(Event):
+    """Request diarization for provided audio + transcript."""
+
+    audio_waveform: Any  # np.ndarray or torch.Tensor
+    start_time: int
+    transcript: str
+    language: str
+    session_id: Optional[str] = None
+
+
+@dataclass
+class DiarizationCompleted(Event):
+    """Published after diarization finished."""
+
+    result: Dict[str, Any]
+    session_id: Optional[str] = None
 
 
 class EventBus:

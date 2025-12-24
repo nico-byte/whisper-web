@@ -1,0 +1,1 @@
+from .msdd import MSDDDiarizer

@@ -1,6 +1,6 @@
 import asyncio
 from asyncio import Queue
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 
@@ -11,8 +11,13 @@ from whisper_web.events import (
     EventBus,
     TranscriptionCompleted,
     TranscriptionUpdated,
+    DiarizationRequest,
 )
 from whisper_web.types import AudioChunk, Transcription
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TranscriptionManager:
@@ -61,13 +66,15 @@ class TranscriptionManager:
         # State
         self.transcriptions: List[Transcription] = []
         self.current_transcription: str = ""
-        self.audio_queue: Queue[Tuple[torch.Tensor, bool]] = Queue(maxsize=128)
+        self.audio_queue: Queue[Tuple[torch.Tensor, int, bool]] = Queue(maxsize=128)
+        self.diarization_queue: Queue[Tuple[torch.Tensor, int, str, str, Optional[str]]] = Queue(maxsize=128)
         self.processed_chunks: int = 0
         self.num_chunks: int = 0
 
         # Subscribe to events
         self.event_bus.subscribe(AudioChunkReceived, self._handle_audio_chunk)  # type: ignore
         self.event_bus.subscribe(TranscriptionCompleted, self._handle_transcription_completed)  # type: ignore
+        self.event_bus.subscribe(DiarizationRequest, self._on_diarization_request)  # type: ignore
 
     async def _handle_audio_chunk(self, event: AudioChunkReceived) -> None:
         """Process incoming audio chunk events and queue valid audio data.
@@ -79,7 +86,12 @@ class TranscriptionManager:
         :type event: :class:`AudioChunkReceived`
         """
         if event.chunk.data.numel() > 0:
-            await self.audio_queue.put((event.chunk.data, event.is_final))
+            await self.audio_queue.put((event.chunk.data, event.chunk.start_time, event.is_final))
+
+    async def _on_diarization_request(self, event: DiarizationRequest) -> None:
+        """ """
+        if event.audio_waveform.data.numel() > 0:
+            await self.diarization_queue.put((event.audio_waveform, event.start_time, event.transcript, event.language, event.session_id))
 
     async def _handle_transcription_completed(self, event: TranscriptionCompleted) -> None:
         """Process completed transcription events and update internal state.
@@ -174,7 +186,8 @@ class TranscriptionManager:
             try:
                 audio_data: tuple[torch.Tensor, bool] = await asyncio.wait_for(self.audio_queue.get(), timeout=1.0)
                 batch_audio.append(audio_data[0])
-                batch_finals.append(audio_data[1])
+                start_time = audio_data[1]
+                batch_finals.append(audio_data[2])
             except asyncio.TimeoutError:
                 continue
 
@@ -183,15 +196,42 @@ class TranscriptionManager:
                 try:
                     audio_data: tuple[torch.Tensor, bool] = await asyncio.wait_for(self.audio_queue.get(), timeout=batch_timeout_s)
                     batch_audio.append(audio_data[0])
-                    batch_finals.append(audio_data[1])
+                    start_time = audio_data[1]
+                    batch_finals.append(audio_data[2])
                 except asyncio.TimeoutError:
                     # Timeout reached, process current batch
                     break
 
             # Process the batch
             if batch_audio:
-                batch_data = (batch_audio, batch_finals)
+                batch_data = (batch_audio, start_time, batch_finals)
                 await model(batch_data)
+
+    async def run_diarization(self, engine) -> None:
+        """ """
+        while True:
+            audio_waveform = None
+            start_time = None
+            transcript = None
+            language = None
+            session_id = None
+
+            # Get first item (with timeout)
+            try:
+                diarization_items: tuple[torch.Tensor, int, str, str, Optional[str]] = await asyncio.wait_for(
+                    self.diarization_queue.get(), timeout=1.0
+                )
+                audio_waveform = diarization_items[0]
+                start_time = diarization_items[1]
+                transcript = diarization_items[2]
+                language = diarization_items[3]
+                session_id = diarization_items[4]
+            except asyncio.TimeoutError:
+                continue
+
+            # Process the batch
+            if audio_waveform is not None and start_time is not None and transcript is not None and language is not None:
+                await engine(audio_waveform, start_time, transcript, language, session_id)
 
     @property
     def queue_size(self) -> int:
@@ -326,7 +366,7 @@ class AudioManager:
             if audio_chunk.data.numel() > 0:
                 await self.audio_chunk_queue.put((audio_chunk, is_final))
         except Exception as e:
-            print(f"Error handling audio chunk: {e}")
+            logger.exception(f"Error handling audio chunk: {e}")
 
     async def _handle_num_chunks_updated(self, event: AudioChunkNum) -> None:
         """Update the total expected chunk count for progress tracking.
@@ -362,7 +402,7 @@ class AudioManager:
         except asyncio.TimeoutError:
             return None
         except Exception as e:
-            print(f"Error getting audio chunk: {e}")
+            logger.exception(f"Error getting audio chunk: {e}")
             return None
 
     @property

@@ -6,7 +6,7 @@ import torch
 @dataclass
 class AudioChunk:
     data: torch.Tensor
-    timestamp: date
+    start_time: int
 
 
 @dataclass

@@ -32,9 +32,18 @@ dev = [
 server = [
   "fastapi>=0.115.12",
   "uvicorn>=0.34.1",
-  "transformers>=4.51.3",
+  "transformers>=4.34",
   "accelerate>=0.33.0",
   "websockets>=15.0.1",
+  "deepmultilingualpunctuation>=1.0.1",
+  "omegaconf>=2.3.0",
+  "torchaudio>=2.8.0",
+  "ctc-forced-aligner>=1.0.2",
+  "nltk>=3.9.2",
+  "yt-dlp>=2025.12.8",
+  "pyannote-audio>=4.0.3",
+  "unidecode>=1.4.0",
+  "torchcodec>=0.7.0",
 ]
 
 # Client dependencies (CLI and audio capture clients)
@@ -44,6 +53,7 @@ client = [
   "aiohttp>=3.12.6",
   "ffmpeg-python>=0.2.0",
   "resampy>=0.4.3",
+  "pyarrow>=19.0.1",
 ]
 
 # Streamlit app dependencies
@@ -60,17 +70,12 @@ http = [
 
 [project.optional-dependencies]
 cpu = [
-  "torch>=2.7.0",
-  "torchaudio>=0.22.0",
+  "torch>=2.8.0",
+  "torchaudio>=2.8.0",
 ]
 cu128 = [
-  "torch>=2.7.0",
-  "torchaudio>=0.22.0",
-  "numba>=0.61.2",
-]
-cu118 = [
-  "torch>=2.7.0",
-  "torchaudio>=0.22.0",
+  "torch>=2.8.0",
+  "torchaudio>=2.8.0",
   "numba>=0.61.2",
 ]
 
@@ -79,7 +84,6 @@ conflicts = [
   [
     { extra = "cpu" },
     { extra = "cu128" },
-    { extra = "cu118" },
   ],
 ]
 
@@ -87,12 +91,10 @@ conflicts = [
 torch = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cu128", extra = "cu128" },
-  { index = "pytorch-cu118", extra = "cu118" },
 ]
 torchaudio = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cu128", extra = "cu128" },
-  { index = "pytorch-cu118", extra = "cu118" },
 ]
 
 [[tool.uv.index]]
@@ -103,11 +105,6 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu118"
-url = "https://download.pytorch.org/whl/cu118"
 explicit = true
 
 [tool.setuptools]

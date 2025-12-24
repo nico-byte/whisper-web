@@ -2,12 +2,16 @@ import os
 import torch
 import re
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def set_device(device) -> torch.device:
     # Order of preference for fallback
     fallback_order = ["cuda", "mps", "cpu"]
 
-    print(f"Requested device: {device}")
+    logger.info(f"Requested device: {device}")
 
     def test_device(device_str: str) -> bool:
         """Test if a device is available and functional."""
@@ -19,27 +23,27 @@ def set_device(device) -> torch.device:
             _ = test_tensor + 1
             return True
         except Exception as e:
-            print(f"Device {device_str} test failed: {e}")
+            logger.exception(f"Device {device_str} test failed: {e}")
             return False
 
     # First try the requested device
     if device in fallback_order and test_device(device):
-        print(f"Using requested device: {device}")
+        logger.info(f"Using requested device: {device}")
         return torch.device(device)
 
     # If requested device failed, try alternatives
     if device in fallback_order:
-        print(f"Requested device '{device}' not available, trying alternatives...")
+        logger.info(f"Requested device '{device}' not available, trying alternatives...")
         fallback_order.remove(device)
 
     # Try devices in fallback order
     for fallback_device in fallback_order:
         if fallback_device != device and test_device(fallback_device):
-            print(f"Using fallback device: {fallback_device}")
+            logger.info(f"Using fallback device: {fallback_device}")
             return torch.device(fallback_device)
 
     # Ultimate fallback to CPU (should always work)
-    print("All devices failed, forcing CPU")
+    logger.info("All devices failed, forcing CPU")
     return torch.device("cpu")
 
 
@@ -50,7 +54,7 @@ def get_installed_models():
 
     # Ensure the models path exists
     if not os.path.exists(models_path):
-        print(f"Models folder does not exist: {models_path}")
+        logger.error(f"Models folder does not exist: {models_path}")
         return []
 
     try:
@@ -75,7 +79,7 @@ def get_installed_models():
             return []
 
     except Exception as e:
-        print(f"Error scanning models folder: {e}")
+        logger.exception(f"Error scanning models folder: {e}")
         # Fallback models
         return []
 

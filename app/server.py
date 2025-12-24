@@ -5,6 +5,10 @@ from whisper_web.server import TranscriptionServer
 from whisper_web.whisper_model import ModelConfig
 from app.helper import is_running_in_docker
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Automatically set HOST based on execution environment
 HOST = "0.0.0.0" if is_running_in_docker() else "127.0.0.1"
 PORT = 8000
@@ -30,15 +34,28 @@ async def monitor_sessions(server: TranscriptionServer, interval: int = 30):
 
             active_sessions = len(server.client_sessions)
             if active_sessions > 0:
-                print(f"Active sessions: {active_sessions}")
+                logger.info(f"Active sessions: {active_sessions}")
                 for session_id, session in server.client_sessions.items():
-                    status = "running" if (session.inference_task and not session.inference_task.done()) else "stopped"
-                    queue_size = session.manager.audio_queue.qsize()
+                    status = (
+                        "running"
+                        if (
+                            session.transcribe_task
+                            and not session.transcribe_task.done()
+                            or session.diarization_task
+                            and not session.diarization_task.done()
+                        )
+                        else "stopped"
+                    )
+                    transcribe_queue_size = session.manager.audio_queue.qsize()
+                    diarization_queue_size = session.manager.diarization_queue.qsize()
                     transcription_count = len(session.manager.transcriptions)
-                    print(f"  {session_id}: {status}, queue={queue_size}, transcriptions={transcription_count}")
+                    logger.info(
+                        f"  {session_id}: {status}, transcribe_queue={transcribe_queue_size} \
+                          diarization_queue={diarization_queue_size}, transcriptions={transcription_count}"
+                    )
 
         except Exception as e:
-            print(f"Session monitor error: {e}")
+            logger.exception(f"Session monitor error: {e}")
 
 
 async def main():
@@ -54,7 +71,7 @@ async def main():
     print(f"Port: {server.port}")
     print(f"Default model: {default_config.model_size}")
     print(f"Default device: {default_config.device}")
-    print()
+    print("=" * 40)
 
     # Start the FastAPI server in a thread
     server.run()
@@ -71,26 +88,26 @@ async def main():
             await asyncio.sleep(1)
 
     except KeyboardInterrupt:
-        print("\nShutting down server...")
+        logger.info("\nShutting down server...")
 
         # Cancel monitoring
         monitor_task.cancel()
 
         # Cleanup all sessions
-        print("Cleaning up sessions...")
+        logger.info("Cleaning up sessions...")
         session_ids = list(server.client_sessions.keys())
         for session_id in session_ids:
             try:
                 await server.remove_session(session_id)
             except Exception as e:
-                print(f"Error cleaning up session {session_id}: {e}")
+                logger.exception(f"Error cleaning up session {session_id}: {e}")
 
-        print("Server stopped.")
+        logger.info("Server stopped.")
 
 
 def signal_handler(signum, frame):
     """Handle interrupt signals gracefully."""
-    print(f"\nReceived signal {signum}")
+    logger.info(f"\nReceived signal {signum}")
     sys.exit(0)
 
 
@@ -102,7 +119,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nServer stopped by user")
+        logger.info("\nServer stopped by user")
     except Exception as e:
-        print(f"Server error: {e}")
+        logger.exception(f"Server error: {e}")
         sys.exit(1)

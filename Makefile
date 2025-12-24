@@ -20,54 +20,57 @@ pytest:
 
 # Docker tasks
 docker.up.server-cpu-streamlit:
-	source .env && SERVER_TYPE=cpu docker compose --profile cpu --profile streamlit up
+	SERVER_TYPE=cpu docker compose --profile cpu --profile streamlit up
 
 docker.up.server-cuda-streamlit:
-	source .env && SERVER_TYPE=cuda docker compose --profile cuda --profile streamlit up
+	SERVER_TYPE=cuda docker compose --profile cuda --profile streamlit up
 
 docker.build.server-cpu:
-	source .env && docker compose build server-cpu
+	docker compose build server-cpu
 
 docker.build.server-cuda:
-	source .env && docker compose build server-cuda
+	docker compose build server-cuda
 
 docker.build.streamlit:
-	source .env && docker compose build streamlit-upload
-	source .env && docker compose build streamlit-viewer
+	docker compose build streamlit-upload
+	docker compose build streamlit-viewer
 
 docker.build.all-cpu:
-	source .env && docker compose build server-cpu
-	source .env && docker compose build streamlit-upload
-	source .env && docker compose build streamlit-viewer
+	docker compose build server-cpu
+	docker compose build streamlit-upload
+	docker compose build streamlit-viewer
 
 docker.build.all-cuda:
-	source .env && docker compose build server-cuda
-	source .env && docker compose build streamlit-upload
-	source .env && docker compose build streamlit-viewer
+	docker compose build server-cuda
+	docker compose build streamlit-upload
+	docker compose build streamlit-viewer
 
 # Local development tasks - using the local venv
 local.server:
-	source .env && source ./.venv/bin/activate && ./.venv/bin/python -m app.server
+	uv sync --group server --group client --extra cpu --python python3.12 && source ./.venv/bin/activate && ./.venv/bin/python -m app.server
 
 local.cli:
-	source .env && source ./.venv/bin/activate && ./.venv/bin/python -m app.cli
+	source ./.venv/bin/activate && ./.venv/bin/python -m app.cli
 
 local.viewer:
-	source .env && source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_viewer_client.py --server.address 127.0.0.1
+	source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_viewer_client.py --server.address 127.0.0.1
 
 local.upload:
-	source .env && source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_upload_client.py --server.address 127.0.0.1
+	uv sync --group streamlit --group client --group http --extra cpu --python python3.12 && source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_upload_client.py --server.address 127.0.0.1
+
+local.diarization:
+	uv sync --group streamlit --group client --group http --extra cpu --python python3.12 && source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_diarization.py --server.address 127.0.0.1
 
 local.run.cli:
 	@echo "Starting server and cli..."
 	@trap 'echo "Stopping..."; kill 0' SIGINT SIGTERM EXIT; \
 	( \
-		source .env && source ./.venv/bin/activate && ./.venv/bin/python -m app.server & \
+		source ./.venv/bin/activate && ./.venv/bin/python -m app.server & \
 		echo "Server started" & \
 		sleep 10 && \
-		source .env && source ./.venv/bin/activate && ./.venv/bin/python -m app.cli & \
+		source ./.venv/bin/activate && ./.venv/bin/python -m app.cli & \
 		echo "Cli started" & \
-		source .env && source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_viewer_client.py --server.address 127.0.0.1 & \
+		source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_viewer_client.py --server.address 127.0.0.1 & \
 		echo "Streamlit app started" & \
 		wait \
 	)
@@ -76,10 +79,10 @@ local.run.upload:
 	@echo "Starting server and upload frontend..."
 	@trap 'echo "Stopping..."; kill 0' SIGINT SIGTERM EXIT; \
 	( \
-		source .env && source ./.venv/bin/activate && ./.venv/bin/python -m app.server & \
+		source ./.venv/bin/activate && ./.venv/bin/python -m app.server & \
 		echo "Server started" & \
 		sleep 10 && \
-		source .env && source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_upload_client.py --server.address 127.0.0.1 & \
+		source ./.venv/bin/activate && ./.venv/bin/python -m streamlit run ./app/streamlit_upload_client.py --server.address 127.0.0.1 & \
 		echo "Upload frontend started" & \
 		wait \
 	)

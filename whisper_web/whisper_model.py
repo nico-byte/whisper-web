@@ -7,13 +7,240 @@ from typing import Optional, Tuple
 from torch import Tensor
 from datetime import datetime
 
-from whisper_web.utils import set_device, process_transcription_timestamps
-from whisper_web.events import EventBus, TranscriptionCompleted
+from whisper_web.utils import set_device
+from whisper_web.events import DiarizationRequest, EventBus, TranscriptionCompleted
 from whisper_web.types import Transcription
-from transformers.models.whisper import WhisperProcessor, WhisperForConditionalGeneration
-from transformers import logging
+from transformers.models.whisper import WhisperProcessor, WhisperForConditionalGeneration, WhisperTokenizer
+from transformers import logging as transformers_logging
+import logging
 
-logging.set_verbosity_error()
+transformers_logging.set_verbosity_error()
+
+logger = logging.getLogger(__name__)
+
+WHISPER_LANGUAGE_IDS = {
+    "en": 50259,
+    "zh": 50260,
+    "de": 50261,
+    "es": 50262,
+    "ru": 50263,
+    "ko": 50264,
+    "fr": 50265,
+    "ja": 50266,
+    "pt": 50267,
+    "tr": 50268,
+    "pl": 50269,
+    "ca": 50270,
+    "nl": 50271,
+    "ar": 50272,
+    "sv": 50273,
+    "it": 50274,
+    "id": 50275,
+    "hi": 50276,
+    "fi": 50277,
+    "vi": 50278,
+    "he": 50279,
+    "uk": 50280,
+    "el": 50281,
+    "ms": 50282,
+    "cs": 50283,
+    "ro": 50284,
+    "da": 50285,
+    "hu": 50286,
+    "ta": 50287,
+    "no": 50288,
+    "th": 50289,
+    "ur": 50290,
+    "hr": 50291,
+    "bg": 50292,
+    "lt": 50293,
+    "la": 50294,
+    "mi": 50295,
+    "ml": 50296,
+    "cy": 50297,
+    "sk": 50298,
+    "te": 50299,
+    "fa": 50300,
+    "lv": 50301,
+    "bn": 50302,
+    "sr": 50303,
+    "az": 50304,
+    "sl": 50305,
+    "kn": 50306,
+    "et": 50307,
+    "mk": 50308,
+    "br": 50309,
+    "eu": 50310,
+    "is": 50311,
+    "hy": 50312,
+    "ne": 50313,
+    "mn": 50314,
+    "bs": 50315,
+    "kk": 50316,
+    "sq": 50317,
+    "sw": 50318,
+    "gl": 50319,
+    "mr": 50320,
+    "pa": 50321,
+    "si": 50322,
+    "km": 50323,
+    "sn": 50324,
+    "yo": 50325,
+    "so": 50326,
+    "af": 50327,
+    "oc": 50328,
+    "ka": 50329,
+    "be": 50330,
+    "tg": 50331,
+    "sd": 50332,
+    "gu": 50333,
+    "am": 50334,
+    "yi": 50335,
+    "lo": 50336,
+    "uz": 50337,
+    "fo": 50338,
+    "ht": 50339,
+    "ps": 50340,
+    "tk": 50341,
+    "nn": 50342,
+    "mt": 50343,
+    "sa": 50344,
+    "lb": 50345,
+    "my": 50346,
+    "bo": 50347,
+    "tl": 50348,
+    "mg": 50349,
+    "as": 50350,
+    "tt": 50351,
+    "haw": 50352,
+    "ln": 50353,
+    "ha": 50354,
+    "ba": 50355,
+    "jw": 50356,
+    "su": 50357,
+}
+
+WHISPER_LANGUAGES = [
+    "en",
+    "zh",
+    "de",
+    "es",
+    "ru",
+    "ko",
+    "fr",
+    "ja",
+    "pt",
+    "tr",
+    "pl",
+    "ca",
+    "nl",
+    "ar",
+    "sv",
+    "it",
+    "id",
+    "hi",
+    "fi",
+    "vi",
+    "he",
+    "uk",
+    "el",
+    "ms",
+    "cs",
+    "ro",
+    "da",
+    "hu",
+    "ta",
+    "no",
+    "th",
+    "ur",
+    "hr",
+    "bg",
+    "lt",
+    "la",
+    "mi",
+    "ml",
+    "cy",
+    "sk",
+    "te",
+    "fa",
+    "lv",
+    "bn",
+    "sr",
+    "az",
+    "sl",
+    "kn",
+    "et",
+    "mk",
+    "br",
+    "eu",
+    "is",
+    "hy",
+    "ne",
+    "mn",
+    "bs",
+    "kk",
+    "sq",
+    "sw",
+    "gl",
+    "mr",
+    "pa",
+    "si",
+    "km",
+    "sn",
+    "yo",
+    "so",
+    "af",
+    "oc",
+    "ka",
+    "be",
+    "tg",
+    "sd",
+    "gu",
+    "am",
+    "yi",
+    "lo",
+    "uz",
+    "fo",
+    "ht",
+    "ps",
+    "tk",
+    "nn",
+    "mt",
+    "sa",
+    "lb",
+    "my",
+    "bo",
+    "tl",
+    "mg",
+    "as",
+    "tt",
+    "haw",
+    "ln",
+    "ha",
+    "ba",
+    "jw",
+    "su",
+]
+
+
+def get_language_probs(scores):
+    """
+    Note: Language detection may not be done seperately for each observation
+    in HuggingFace when data is batched.
+    """
+    keys, ids = zip(*WHISPER_LANGUAGE_IDS.items())
+    probs = torch.softmax(scores, dim=-1)
+    top_language = torch.argmax(probs, dim=-1, keepdim=True)
+    top_language_probs = probs.gather(1, top_language)
+    all_languages = probs[:, ids]
+
+    top_language = top_language.to("cpu").squeeze(-1).tolist()
+    top_language_probs = top_language_probs.to("cpu").squeeze(-1).tolist()
+    all_languages = all_languages.to("cpu").tolist()
+
+    all_languages = [{lang: prob for lang, prob in zip(keys, langs)} for langs in all_languages]
+
+    return top_language, top_language_probs, all_languages
 
 
 class ModelConfig(BaseModel):
@@ -96,7 +323,7 @@ class WhisperModel:
         publishes results through the event system for loose coupling.
     """
 
-    def __init__(self, model_args: ModelConfig, event_bus: EventBus):
+    def __init__(self, model_args: ModelConfig, event_bus: EventBus, session_id: Optional[str] = None):
         self.event_bus = event_bus
 
         self.device = set_device(model_args.device)  # type: ignore
@@ -109,11 +336,13 @@ class WhisperModel:
         self.available_model_sizes = []
         self.model_size = ""
         self.model_id = ""
+        self.session_id: Optional[str] = session_id
 
         self.last_timestamp = 0.0
 
         self.speech_model: Optional[WhisperForConditionalGeneration] = None
         self.processor: Optional[WhisperProcessor] = None
+        self.tokenizer: Optional[WhisperTokenizer] = None
 
         self.load_model(model_args.model_size, model_args.model_id)
 
@@ -166,7 +395,7 @@ class WhisperModel:
             self.model_size = "large-v3" if model_size == "large" else model_size
 
             if model_size not in self.available_model_sizes:
-                print(f"Model size not supported. Defaulting to {self.model_size}.")
+                logger.info(f"Model size not supported. Defaulting to {self.model_size}.")
 
             self.model_id = (
                 f"distil-whisper/distil-{self.model_size}.en"
@@ -190,6 +419,7 @@ class WhisperModel:
         ).to(self.device)  # type: ignore
 
         self.processor = WhisperProcessor.from_pretrained(self.model_id, cache_dir=cache_dir)  # type: ignore
+        self.tokenizer = WhisperTokenizer.from_pretrained(self.model_id, cache_dir=cache_dir)  # type: ignore
 
     async def _transcribe(self, audio: list[Tensor]) -> list[str]:
         """Perform batch speech-to-text transcription on audio tensors with timestamps.
@@ -265,16 +495,15 @@ class WhisperModel:
             inputs = self.processor(
                 np_audio,
                 truncation=False,
-                padding="longest",
                 return_attention_mask=True,
                 sampling_rate=self.samplerate,
                 return_tensors="pt",
             )
             inputs = inputs.to(self.device, dtype=self.torch_dtype)
         except Exception as e:
-            print(f"Error during audio preprocessing: {e}")
-            print(f"Audio shapes: {[a.shape if hasattr(a, 'shape') else len(a) for a in audio]}")
-            print(f"Audio types: {[type(a) for a in audio]}")
+            logger.exception(f"Error during audio preprocessing: {e}")
+            logger.debug(f"Audio shapes: {[a.shape if hasattr(a, 'shape') else len(a) for a in audio]}")
+            logger.debug(f"Audio types: {[type(a) for a in audio]}")
             return []
 
         try:
@@ -287,21 +516,22 @@ class WhisperModel:
                 temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
                 logprob_threshold=-1.0,
                 compression_ratio_threshold=1.35,
-                return_timestamps=True,
+                return_timestamps=False,
                 pad_token_id=self.processor.tokenizer.pad_token_id,  # type: ignore
                 eos_token_id=self.processor.tokenizer.eos_token_id,  # type: ignore
             )
+
         except Exception as e:
-            print(f"Error during model generation: {e}")
+            logger.exception(f"Error during model generation: {e}")
             return []
 
         results = await asyncio.to_thread(
-            self.processor.batch_decode, generated_ids, skip_special_tokens=True, decode_with_timestamps=True, return_timestamps=True
+            self.processor.batch_decode, generated_ids, skip_special_tokens=True, decode_with_timestamps=False, return_timestamps=False
         )
 
         return results
 
-    async def __call__(self, audio_data: Tuple[list[Tensor], list[bool]]) -> None:
+    async def __call__(self, audio_data: Tuple[list[Tensor], int, list[bool]]) -> None:
         """Process batch of audio data and publish transcription results via event system.
 
         This method serves as the main entry point for batch audio transcription, handling
@@ -309,9 +539,8 @@ class WhisperModel:
         publication through the event bus. It's designed to be called by the transcription
         manager with batched audio data.
 
-        :param audio_data: Tuple containing list of audio tensors and list of finality flags
-        :type audio_data: Tuple[list[Tensor], list[bool]]
-
+        :param audio_data: Tuple containing list of audio tensors, start time, and list of finality flags
+        :type audio_data: Tuple[list[Tensor], int, list[bool]]
         **Parameters:**
 
         - `audio_data[0]`: List of audio tensors, each with shape (samples,) at configured sample rate
@@ -353,7 +582,7 @@ class WhisperModel:
             The batch size affects GPU memory usage. Monitor memory consumption with
             large batches to avoid out-of-memory errors.
         """
-        audio_batch, finals_batch = audio_data
+        audio_batch, start_time, finals_batch = audio_data
 
         assert isinstance(audio_batch, list), "Audio data must be a list"
         assert all(isinstance(a, Tensor) for a in audio_batch), "All audio items must be PyTorch tensors"
@@ -363,9 +592,9 @@ class WhisperModel:
 
         # Perform batch transcription
         transcriptions = await self._transcribe(audio_batch)
-        transcriptions, self.last_timestamp = process_transcription_timestamps(transcriptions, self.last_timestamp)
+        # transcriptions, self.last_timestamp = process_transcription_timestamps(transcriptions, self.last_timestamp)
 
-        print(f"Transcription: {transcriptions}")
+        logger.debug(f"Transcription: {transcriptions}")
 
         # Create Transcription objects with timestamps
         current_time = datetime.now()
@@ -376,6 +605,19 @@ class WhisperModel:
             *[
                 self.event_bus.publish(TranscriptionCompleted(transcription=transcription, is_final=is_final))
                 for transcription, is_final in zip(transcriptions, finals_batch)
+            ]
+        )
+
+        # Publish all transcription events
+        # TODO: Fix language
+        await asyncio.gather(
+            *[
+                self.event_bus.publish(
+                    DiarizationRequest(
+                        audio_waveform=audio, start_time=start_time, transcript=transcription.text, language="de", session_id=self.session_id
+                    )
+                )
+                for transcription, audio in zip(transcriptions, audio_batch)
             ]
         )
 
@@ -409,7 +651,7 @@ class WhisperModel:
             After calling this method, the model instance becomes unusable.
             Any subsequent transcription calls will fail.
         """
-        print("Cleaning up WhisperModel resources...")
+        logger.info("Cleaning up WhisperModel resources...")
 
         # Clean up speech model
         if hasattr(self, "speech_model") and self.speech_model is not None:
@@ -421,9 +663,9 @@ class WhisperModel:
                 # Delete model reference
                 del self.speech_model
                 self.speech_model = None
-                print("Speech model cleaned up")
+                logger.info("Speech model cleaned up")
             except Exception as e:
-                print(f"Error cleaning up speech model: {e}")
+                logger.exception(f"Error cleaning up speech model: {e}")
 
         # Clean up processor
         if hasattr(self, "processor") and self.processor is not None:
@@ -434,9 +676,9 @@ class WhisperModel:
 
                 del self.processor
                 self.processor = None
-                print("Processor cleaned up")
+                logger.info("Processor cleaned up")
             except Exception as e:
-                print(f"Error cleaning up processor: {e}")
+                logger.exception(f"Error cleaning up processor: {e}")
 
         # Reset internal state
         self.last_timestamp = 0.0
@@ -452,18 +694,18 @@ class WhisperModel:
             try:
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
-                print("CUDA cache cleared")
+                logger.info("CUDA cache cleared")
             except Exception as e:
-                print(f"Error clearing CUDA cache: {e}")
+                logger.exception(f"Error clearing CUDA cache: {e}")
 
-        print("WhisperModel cleanup completed")
+        logger.info("WhisperModel cleanup completed")
 
     def cleanup(self):
         """Cleanup resources when the model is deleted."""
         try:
             self._cleanup()
         except Exception as e:
-            print(f"Error during WhisperModel destructor cleanup: {e}")
+            logger.exception(f"Error during WhisperModel destructor cleanup: {e}")
             # Fallback cleanup
             try:
                 if hasattr(self, "speech_model") and self.speech_model is not None:
@@ -478,4 +720,4 @@ class WhisperModel:
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             except Exception as e:
-                print(f"Error during fallback cleanup: {e}")
+                logger.exception(f"Error during fallback cleanup: {e}")
