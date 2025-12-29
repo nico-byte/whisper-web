@@ -1,13 +1,26 @@
-.PHONY: format lint lintfix pytest
+.PHONY: format lint lintfix pytest checkformat typecheck check ccc check-lock lock-if-needed
 .PHONY: docker..up.server-cpu-streamlit docker.up.server-cuda-streamlit docker.build.server-cpu 
 .PHONY: docker.build.server-cuda docker.build.streamlit docker.build.all docker.clean
 .PHONY: local.server local.cli local.upload local.viewer local.run.cli local.run.upload
 
 SHELL := /bin/bash
+DIRS=whisper_web app tests
 
 # Development tasks
 format:
 	uv run ruff format
+
+checkformat:
+	uv run ruff format --check --diff ${DIRS}
+
+typecheck:
+	PYRIGHT_PYTHON_PYLANCE_VERSION=latest-release uv run pyright
+
+check-lock:
+	uv lock --check
+
+lock-if-needed:
+	uv lock
 
 lint:
 	uv run ruff check
@@ -17,6 +30,10 @@ lintfix:
 
 pytest:
 	source ./.venv/bin/activate && ./.venv/bin/python -m pytest ./tests -v --tb=short
+
+check: checkformat lint typecheck pytest
+
+ccc: check-lock format lintfix typecheck pytest
 
 # Docker tasks
 docker.up.server-cpu-streamlit:
@@ -47,7 +64,7 @@ docker.build.all-cuda:
 
 # Local development tasks - using the local venv
 local.server:
-	uv sync --group server --group client --extra cpu --python python3.12 && source ./.venv/bin/activate && ./.venv/bin/python -m app.server
+	uv sync --group server --group client --extra cpu --python python3.12 && source ./.venv/bin/activate && ./.venv/bin/python -m whisper_web
 
 local.cli:
 	source ./.venv/bin/activate && ./.venv/bin/python -m app.cli

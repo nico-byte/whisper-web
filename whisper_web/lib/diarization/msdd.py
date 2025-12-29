@@ -5,7 +5,6 @@ from typing import List, Tuple, Union, Dict
 
 import torch
 import torchaudio
-from omegaconf import OmegaConf
 
 from pyannote.audio import Pipeline  # type: ignore
 import pyannote
@@ -14,10 +13,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
-torch.serialization.add_safe_globals([pyannote.audio.core.task.Specifications])
-torch.serialization.add_safe_globals([pyannote.audio.core.task.Problem])
-torch.serialization.add_safe_globals([pyannote.audio.core.task.Resolution])
+torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])  # type: ignore
+torch.serialization.add_safe_globals([pyannote.audio.core.task.Specifications])  # type: ignore
+torch.serialization.add_safe_globals([pyannote.audio.core.task.Problem])  # type: ignore
+torch.serialization.add_safe_globals([pyannote.audio.core.task.Resolution])  # type: ignore
 
 
 class MSDDDiarizer:
@@ -169,24 +168,3 @@ class MSDDDiarizer:
                     logger.debug(f"Cleaned up temporary directory: {tmp_path}")
                 except Exception as e:
                     logger.warning(f"Failed to clean up temp directory: {e}")
-
-
-def create_config():
-    config = OmegaConf.load(os.path.join(os.path.dirname(__file__), "diar_infer_telephonic.yaml"))
-    pretrained_vad = "vad_multilingual_marblenet"
-    pretrained_speaker_model = "titanet_large"
-
-    config.diarizer.out_dir = None
-    config.diarizer.manifest_filepath = None
-    config.diarizer.speaker_embeddings.model_path = pretrained_speaker_model
-    config.diarizer.oracle_vad = False  # compute VAD provided with model_path to vad config
-    config.diarizer.clustering.parameters.oracle_num_speakers = False
-
-    # Here, we use our in-house pretrained NeMo VAD model
-    config.diarizer.vad.model_path = pretrained_vad
-    config.diarizer.vad.parameters.onset = 0.8
-    config.diarizer.vad.parameters.offset = 0.6
-    config.diarizer.vad.parameters.pad_offset = -0.05
-    config.diarizer.msdd_model.model_path = "diar_msdd_telephonic"  # Telephonic speaker diarization model
-
-    return config

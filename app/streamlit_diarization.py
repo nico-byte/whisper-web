@@ -10,10 +10,10 @@ import soundfile as sf
 import streamlit as st
 import websockets
 
-from app.helper import get_server_urls
-from whisper_web.events import EventBus
-from whisper_web.inputstream_generator import GeneratorConfig, InputStreamGenerator
-from whisper_web.management import AudioManager
+from whisper_web.helper import get_server_urls
+from whisper_web.lib.backbone.events import EventBus
+from whisper_web.lib.audio_pipeline.inputstream_generator import GeneratorConfig, InputStreamGenerator
+from whisper_web.lib.backbone.management import AudioManager
 
 API_BASE_URL, WS_BASE_URL = get_server_urls()
 
@@ -44,7 +44,7 @@ if "last_traceback" not in st.session_state:
     st.session_state["last_traceback"] = None
 
 
-def create_session(model_args) -> Optional[str]:
+def create_session(model_args: dict[str, str]) -> Optional[str]:
     """Create a new transcription session with specified model."""
     try:
         model_config = {
@@ -135,6 +135,7 @@ async def run_async_stream(session_id: str, audio_file_path: str, result_holder:
 
 def run_async_stream_wrapper(session_id: str, audio_file_path: str, result_holder: BackgroundStreamResult):
     """Wrapper to run async function in a new event loop within the thread."""
+    loop = None
     try:
         # Create new event loop for this thread
         loop = asyncio.new_event_loop()
@@ -149,7 +150,8 @@ def run_async_stream_wrapper(session_id: str, audio_file_path: str, result_holde
     finally:
         # Clean up the event loop
         try:
-            loop.close()
+            if loop is not None:
+                loop.close()
         except Exception:
             pass
 
@@ -312,7 +314,7 @@ with st.sidebar:
 
     if st.button("🆕 Create New Session", type="primary"):
         with st.spinner("Creating session..."):
-            session_id = create_session(model_args)
+            session_id = create_session(model_args)  # type: ignore
             if session_id:
                 st.session_state["session_id"] = session_id
                 st.session_state["is_streaming"] = False

@@ -410,23 +410,6 @@ def format_timestamp(milliseconds: float, always_include_hours: bool = True, dec
     return f"{hours_marker}{minutes:02d}:{seconds:02d}{decimal_marker}{milliseconds:03d}"
 
 
-def write_srt(transcript, file):
-    """
-    Write a transcript to a file in SRT format.
-
-    """
-    for i, segment in enumerate(transcript, start=1):
-        # write srt lines
-        logger.debug(
-            f"{i}\n"
-            f"{format_timestamp(segment['start_time'])} --> "
-            f"{format_timestamp(segment['end_time'])}\n"
-            f"{segment['speaker']}: {segment['text'].strip().replace('-->', '->')}\n",
-            file=file,
-            flush=True,
-        )
-
-
 def find_numeral_symbol_tokens(tokenizer):
     numeral_symbol_tokens = [
         -1,

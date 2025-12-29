@@ -4,10 +4,11 @@ import websockets
 import soundfile as sf
 import io
 
-from whisper_web.inputstream_generator import GeneratorConfig, InputStreamGenerator
-from whisper_web.management import AudioManager
-from whisper_web.events import EventBus
-from app.helper import get_server_urls
+from whisper_web.lib.audio_pipeline.inputstream_generator import GeneratorConfig, InputStreamGenerator
+from whisper_web.lib.transcription.whisper_model import ModelConfig
+from whisper_web.lib.backbone.management import AudioManager
+from whisper_web.lib.backbone.events import EventBus
+from whisper_web.helper import get_server_urls
 
 API_BASE_URL, WS_BASE_URL = get_server_urls()
 
@@ -18,13 +19,13 @@ async def create_session_with_model(base_url: str, model_size: str = "small", co
     try:
         async with aiohttp.ClientSession() as session:
             # Create model config
-            model_config = {
-                "model_size": model_size,
-                "device": "cuda",  # Use CPU for this example
-                "continuous": True,
-                "use_vad": False,
-                "samplerate": 16000,
-            }
+            model_config: ModelConfig = ModelConfig(
+                model_size=model_size,
+                device="cuda",  # Use CPU for this example
+                continuous=True,
+                use_vad=False,
+                samplerate=16000,
+            )
 
             # Create session
             async with session.post(f"{base_url}/sessions", json=model_config) as response:
@@ -101,7 +102,7 @@ async def stream_audio(session_id: str, manager: AudioManager):
 
             if chunk.data.numel() > 0:
                 # Convert to numpy array and ensure proper format
-                audio_data = chunk.data.detach().cpu().numpy()
+                audio_data = chunk.data.detach().cpu().numpy()  # type: ignore
 
                 # Convert to WAV bytes
                 with io.BytesIO() as buffer:
@@ -157,6 +158,7 @@ async def main():
 
     # Wait a bit for server to be ready
     await asyncio.sleep(1)
+    session_id = None
 
     try:
         # Create sessions with different model configurations
@@ -192,7 +194,8 @@ async def main():
     finally:
         # Cleanup
         try:
-            await cleanup_session(API_BASE_URL, session_id)
+            if session_id is not None:
+                await cleanup_session(API_BASE_URL, session_id)
         except Exception as e:
             print(f"Failed to cleanup session: {e}")
 

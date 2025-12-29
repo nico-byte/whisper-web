@@ -2,7 +2,7 @@
     "recommendations": [
         "charliermarsh.ruff",
         "ms-python.python",
-        "meta.pyrefly",
+        "ms-python.vscode-pylance",
     ],
     "unwantedRecommendations": [
         "ms-python.flake8",

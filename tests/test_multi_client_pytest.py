@@ -12,8 +12,8 @@ import time
 import pytest
 import pytest_asyncio
 from typing import Generator, AsyncGenerator
-from whisper_web.server import TranscriptionServer
-from whisper_web.whisper_model import ModelConfig
+from whisper_web.__main__ import TranscriptionServer
+from whisper_web.lib.transcription.whisper_model import ModelConfig
 
 
 @pytest.fixture(scope="session")
@@ -180,7 +180,7 @@ class TestMultiClientAPI:
         ]
         responses = await asyncio.gather(*tasks)
 
-        for i, response in enumerate(responses):
+        for _, response in enumerate(responses):
             assert response.status_code == 200
 
         print("✓ Concurrent access to multiple sessions successful")

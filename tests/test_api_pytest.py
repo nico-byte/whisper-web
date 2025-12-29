@@ -11,8 +11,8 @@ import httpx
 import uvicorn
 import threading
 import time
-from whisper_web.server import TranscriptionServer
-from whisper_web.whisper_model import ModelConfig
+from whisper_web.__main__ import TranscriptionServer
+from whisper_web.lib.transcription.whisper_model import ModelConfig
 
 
 @pytest_asyncio.fixture(scope="session")

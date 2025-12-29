@@ -1,36 +1,34 @@
 ### Stolen from https://github.com/MahmoudAshraf97/whisper-diarization/blob/main/diarize.py
-import torch
+import asyncio
+import logging
+import math
 import re
 from typing import Any, Dict, Optional
 
-from deepmultilingualpunctuation import PunctuationModel
-from whisper_web.diarization.lib import MSDDDiarizer
-from packaging import version
-from transformers import AutoModelForCTC, AutoTokenizer, Wav2Vec2ForCTC
-from transformers import __version__ as transformers_version
-from transformers.utils import is_flash_attn_2_available
-
-import asyncio
-from whisper_web.events import DiarizationCompleted, EventBus
-
-import logging
 import numpy
-import math
-
-from whisper_web.diarization.utils import (
-    langs_to_iso,
-    get_words_speaker_mapping,
-    get_realigned_ws_mapping_with_punctuation,
-    get_sentences_speaker_mapping,
-    get_speaker_aware_transcript,
-)
-
-
+import torch
 from ctc_forced_aligner import (
     get_alignments,
     get_spans,
     postprocess_results,
     preprocess_text,
+)
+from deepmultilingualpunctuation import PunctuationModel
+from packaging import version
+from transformers.models.auto.modeling_auto import AutoModelForCTC
+from transformers.models.auto.tokenization_auto import AutoTokenizer
+from transformers.models.wav2vec2 import Wav2Vec2ForCTC
+from transformers import __version__ as transformers_version
+from transformers.utils.import_utils import is_flash_attn_2_available
+
+from whisper_web.lib.backbone.events import DiarizationCompleted, EventBus
+from whisper_web.lib.diarization.msdd import MSDDDiarizer
+from whisper_web.lib.diarization.utils import (
+    get_realigned_ws_mapping_with_punctuation,
+    get_sentences_speaker_mapping,
+    get_speaker_aware_transcript,
+    get_words_speaker_mapping,
+    langs_to_iso,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,10 +45,10 @@ def time_to_frame(time):
 def load_alignment_model(
     device: str,
     model_path: str = "MahmoudAshraf/mms-300m-1130-forced-aligner",
-    attn_implementation: str = None,
+    attn_implementation: str = "",
     dtype: torch.dtype = torch.float32,
 ):
-    if attn_implementation is None:
+    if attn_implementation == "":
         if version.parse(transformers_version) < version.parse("4.41.0"):
             attn_implementation = "eager"
         elif is_flash_attn_2_available() and device == "cuda" and dtype in [torch.float16, torch.bfloat16]:
@@ -60,6 +58,8 @@ def load_alignment_model(
     model = (
         AutoModelForCTC.from_pretrained(
             model_path,
+            attn_implementation=attn_implementation,
+            torch_dtype=dtype,
         )
         .to(device)
         .eval()
@@ -106,7 +106,7 @@ def generate_emissions(model: Wav2Vec2ForCTC, audio_waveform, window_length=30, 
     with torch.inference_mode():
         for i in range(0, len(input_windows), max(1, batch_size)):
             batch = input_windows[i : i + batch_size].astype(numpy.float32)
-            input_tensor = torch.from_numpy(batch)  # (B, T)
+            input_tensor = torch.from_numpy(batch).to(model_device).to(model.dtype)  # (B, T)
             # move to model device if possible
             try:
                 input_tensor = input_tensor.to(model_device)
@@ -253,7 +253,7 @@ class DiarizationEngine:
         # Load alignment model
         self.alignment_model, self.alignment_tokenizer = load_alignment_model(
             self.device,
-            dtype=torch.float32,
+            dtype=torch.float16 if self.device in ["cuda", "mps"] else torch.float32,
         )
 
     async def __call__(
@@ -267,7 +267,7 @@ class DiarizationEngine:
         suppress_numerals: bool = False,
         punctuate: bool = True,
         alignment_helpers: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ):
         """
         Perform diarization and return speaker-attributed transcript and word/segment mapping.
 
@@ -284,7 +284,7 @@ class DiarizationEngine:
                 dict with keys: 'speaker_segments', 'word_speaker_mapping', 'sentence_speaker_mapping', 'transcript_with_speakers'
         """
         # --- Forced Alignment ---
-        start_time = (start_time / SAMPLING_FREQ) * 1000  # convert to ms
+        start_time = int((start_time / SAMPLING_FREQ) * 1000)  # convert to ms
 
         word_timestamps = await asyncio.to_thread(
             run_forced_alignment,
@@ -299,7 +299,7 @@ class DiarizationEngine:
         # --- Diarization ---
         try:
             if self.diarizer_model is not None:
-                speaker_ts = self.diarizer_model.diarize(audio_waveform.unsqueeze(0))
+                speaker_ts = await asyncio.to_thread(self.diarizer_model.diarize, audio_waveform.unsqueeze(0))
             else:
                 speaker_ts = []
         except Exception as e:
@@ -313,7 +313,7 @@ class DiarizationEngine:
             try:
                 if self.punct_model is None:
                     self.punct_model = PunctuationModel(model="kredor/punctuate-all")
-                words_list = list(map(lambda x: x["word"], wsm))
+                words_list = [x["word"] for x in wsm]
                 labeled_words = self.punct_model.predict(words_list)
                 ending_puncts = ".?!"
                 model_puncts = ".,;:!?"

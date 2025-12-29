@@ -1,9 +1,9 @@
 import asyncio
 import signal
 import sys
-from whisper_web.server import TranscriptionServer
-from whisper_web.whisper_model import ModelConfig
-from app.helper import is_running_in_docker
+from whisper_web.lib.backbone.server import TranscriptionServer
+from whisper_web.lib.transcription.whisper_model import ModelConfig
+from whisper_web.helper import is_running_in_docker
 
 import logging
 

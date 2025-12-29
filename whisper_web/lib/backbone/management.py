@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 
 import torch
 
-from whisper_web.events import (
+from whisper_web.lib.backbone.events import (
     AudioChunkGenerated,
     AudioChunkNum,
     AudioChunkReceived,
@@ -184,7 +184,7 @@ class TranscriptionManager:
 
             # Get first item (with timeout)
             try:
-                audio_data: tuple[torch.Tensor, bool] = await asyncio.wait_for(self.audio_queue.get(), timeout=1.0)
+                audio_data: tuple[torch.Tensor, int, bool] = await asyncio.wait_for(self.audio_queue.get(), timeout=1.0)
                 batch_audio.append(audio_data[0])
                 start_time = audio_data[1]
                 batch_finals.append(audio_data[2])
@@ -194,7 +194,7 @@ class TranscriptionManager:
             # Collect additional items with short timeout
             while len(batch_audio) < batch_size:
                 try:
-                    audio_data: tuple[torch.Tensor, bool] = await asyncio.wait_for(self.audio_queue.get(), timeout=batch_timeout_s)
+                    audio_data: tuple[torch.Tensor, int, bool] = await asyncio.wait_for(self.audio_queue.get(), timeout=batch_timeout_s)
                     batch_audio.append(audio_data[0])
                     start_time = audio_data[1]
                     batch_finals.append(audio_data[2])

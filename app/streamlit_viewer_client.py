@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import time
 from datetime import datetime
-from app.helper import get_server_urls
+from whisper_web.helper import get_server_urls
 
 API_BASE_URL, WS_BASE_URL = get_server_urls()
 

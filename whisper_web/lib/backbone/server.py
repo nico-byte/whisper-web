@@ -6,7 +6,6 @@ import shutil
 import tempfile
 import threading
 import uuid
-from datetime import datetime
 from typing import Dict, List, Optional
 
 import torchaudio
@@ -16,12 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import yt_dlp
 
-from whisper_web.diarization.diarization import DiarizationEngine
-from whisper_web.events import AudioChunkReceived, DiarizationCompleted, DownloadModel, EventBus
-from whisper_web.management import TranscriptionManager
-from whisper_web.types import AudioChunk
+from whisper_web.lib.diarization.engine import DiarizationEngine
+from whisper_web.lib.backbone.events import AudioChunkReceived, DiarizationCompleted, DownloadModel, EventBus
+from whisper_web.lib.backbone.management import TranscriptionManager
+from whisper_web.types import AudioChunk, Transcription
 from whisper_web.utils import get_installed_models
-from whisper_web.whisper_model import ModelConfig, WhisperModel
+from whisper_web.lib.transcription.whisper_model import ModelConfig, WhisperModel
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -81,7 +80,7 @@ class TranscriptionsResponse(BaseModel):
     """Response schema for getting all transcriptions."""
 
     session_id: str = Field(..., description="Session identifier")
-    transcriptions: List[str] = Field(..., description="List of all transcriptions")
+    transcriptions: List[Transcription] = Field(..., description="List of all transcriptions")
 
 
 class InstalledModelsResponse(BaseModel):
@@ -193,7 +192,7 @@ class ClientSession:
 
         self.event_bus.subscribe(DownloadModel, self.handle_model_download)  # type: ignore
 
-    async def start_transcribe_task(self):
+    def start_transcribe_task(self):
         """Start the transcription inference task for this session.
 
         Creates and starts an async task that runs the main inference loop,
@@ -216,7 +215,7 @@ class ClientSession:
                 self.manager.run_batched_inference(self.model, self.model_config.batch_size, self.model_config.batch_timeout_s)
             )
 
-    async def start_diarization_task(self):
+    def start_diarization_task(self):
         """ """
         if self.diarization_task is None or self.diarization_task.done():
             self.diarization_task = asyncio.create_task(self.manager.run_diarization(self.diarizer))
@@ -262,19 +261,14 @@ class ClientSession:
             This method should be called during session cleanup to prevent
             resource leaks and ensure proper task termination.
         """
-        if self.transcribe_task and not self.transcribe_task.done():
+        if self.transcribe_task and not self.transcribe_task.done() and self.diarization_task and not self.diarization_task.done():
             self.transcribe_task.cancel()
             try:
                 await self.transcribe_task
-            except asyncio.CancelledError:
-                return
-
-        if self.diarization_task and not self.diarization_task.done():
-            self.diarization_task.cancel()
-            try:
                 await self.diarization_task
             except asyncio.CancelledError:
-                return
+                logger.error("Transcription task cancelled")
+                return 1
 
         # Clean up model resources
         self._cleanup_model()
@@ -412,7 +406,7 @@ class TranscriptionServer:
             session = self.client_sessions[session_id]
             await session.stop_inference()
             await session.cleanup()
-            logger.infoi(f"Session {session_id} removed and cleaned up")
+            logger.info(f"Session {session_id} removed and cleaned up")
             del self.client_sessions[session_id]
 
     async def cleanup_inactive_sessions(self):
@@ -476,7 +470,7 @@ class TranscriptionServer:
 
                 await send_message("status", {"message": "Downloading audio..."})
 
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
                     ydl.download([yt_url])
 
                 wav_files = glob.glob(os.path.join(temp_dir, "*.wav"))
@@ -545,8 +539,8 @@ class TranscriptionServer:
             logger.info(f"WebSocket connection accepted for session: {session.session_id}")
 
             # Start inference task for this session
-            await session.start_transcribe_task()
-            await session.start_diarization_task()
+            session.start_transcribe_task()
+            session.start_diarization_task()
 
             try:
                 while True:
@@ -562,7 +556,7 @@ class TranscriptionServer:
 
                     audio_chunk = AudioChunk(
                         data=waveform,
-                        timestamp=datetime.now(),  # Use current time as timestamp
+                        start_time=0,
                     )
 
                     # Append audio tensor to the session's queue
@@ -604,24 +598,25 @@ class TranscriptionServer:
                     )
                     previous_diarization = diarized_transcript
 
-            event_bus.subscribe(DiarizationCompleted, on_diarization_completed)
+            event_bus.subscribe(DiarizationCompleted, on_diarization_completed)  # type: ignore
 
+            temp_dir = None
             try:
                 # 1. Audio Download Logic
-                audio_path, temp_dir = await self.download_youtube_audio(websocket, session_id, send_message)
+                audio_path, temp_dir = await self.download_youtube_audio(websocket, session_id, send_message)  # type: ignore
                 if not audio_path:
                     return
 
                 # 2. Setup Components
-                from whisper_web.events import AudioChunkReceived
-                from whisper_web.inputstream_generator import GeneratorConfig, InputStreamGenerator
-                from whisper_web.management import AudioManager
+                from whisper_web.lib.backbone.events import AudioChunkReceived
+                from whisper_web.lib.audio_pipeline.inputstream_generator import GeneratorConfig, InputStreamGenerator
+                from whisper_web.lib.backbone.management import AudioManager
 
                 generator = InputStreamGenerator(GeneratorConfig(from_file=audio_path), event_bus)
                 audio_manager = AudioManager(event_bus)
 
-                await session.start_transcribe_task()
-                await session.start_diarization_task()
+                session.start_transcribe_task()
+                session.start_diarization_task()
                 await send_message("status", {"message": "Processing started."})
 
                 # 3. Define the Consumer Task
@@ -648,7 +643,7 @@ class TranscriptionServer:
                     await audio_task
 
                 # Run the feeder and wait for it to finish
-                (await audio_feeder(),)
+                await audio_feeder()
 
                 # Allow a small buffer for final diarization segments to clear
                 await asyncio.sleep(1.0)
@@ -664,7 +659,7 @@ class TranscriptionServer:
                 logger.exception(f"Session {session.session_id} disconnected.")
             finally:
                 # Cleanup tasks and files
-                if temp_dir and os.path.exists(temp_dir):
+                if temp_dir is not None and os.path.exists(temp_dir):
                     shutil.rmtree(temp_dir, ignore_errors=True)
 
     def _setup_api_routes(self):
@@ -730,7 +725,9 @@ class TranscriptionServer:
         async def create_session(model_config: Optional[ModelConfig] = None, session_id: Optional[str] = None) -> SessionResponse:
             session_id = session_id or str(uuid.uuid4())
             session = self.get_or_create_session(session_id, model_config)
-            return SessionResponse(session_id=session.session_id, model_configuration=session.model_config.model_dump())
+            return SessionResponse(
+                session_id=session.session_id, model_configuration=session.model_config.model_dump(), message="Session created successfully"
+            )
 
         @self.app.post("/sessions/{session_id}", summary="Create a transcription session with specific ID", response_model=SessionResponse)
         async def create_session_with_id(session_id: str, model_config: Optional[ModelConfig] = None) -> SessionResponse:
@@ -741,7 +738,9 @@ class TranscriptionServer:
                 )
 
             session = self.get_or_create_session(session_id, model_config)
-            return SessionResponse(session_id=session.session_id, model_configuration=session.model_config.model_dump())
+            return SessionResponse(
+                session_id=session.session_id, model_configuration=session.model_config.model_dump(), message="Session created successfully"
+            )
 
         @self.app.delete("/sessions/{session_id}", summary="Remove a transcription session", response_model=MessageResponse)
         async def delete_session(session_id: str) -> MessageResponse:
@@ -805,8 +804,8 @@ class TranscriptionServer:
             await session.stop_inference()
 
             # Start new inference
-            await session.start_transcribe_task()
-            await session.start_diarization_task()
+            session.start_transcribe_task
+            session.start_diarization_task
 
             return SessionOperationResponse(
                 session_id=session_id,

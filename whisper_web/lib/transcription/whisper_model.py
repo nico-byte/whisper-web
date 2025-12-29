@@ -8,7 +8,7 @@ from torch import Tensor
 from datetime import datetime
 
 from whisper_web.utils import set_device
-from whisper_web.events import DiarizationRequest, EventBus, TranscriptionCompleted
+from whisper_web.lib.backbone.events import DiarizationRequest, EventBus, TranscriptionCompleted
 from whisper_web.types import Transcription
 from transformers.models.whisper import WhisperProcessor, WhisperForConditionalGeneration, WhisperTokenizer
 from transformers import logging as transformers_logging
@@ -223,7 +223,7 @@ WHISPER_LANGUAGES = [
 ]
 
 
-def get_language_probs(scores):
+def get_language_probs(scores: torch.Tensor):  # type: ignore
     """
     Note: Language detection may not be done seperately for each observation
     in HuggingFace when data is batched.
@@ -234,13 +234,13 @@ def get_language_probs(scores):
     top_language_probs = probs.gather(1, top_language)
     all_languages = probs[:, ids]
 
-    top_language = top_language.to("cpu").squeeze(-1).tolist()
-    top_language_probs = top_language_probs.to("cpu").squeeze(-1).tolist()
-    all_languages = all_languages.to("cpu").tolist()
+    top_language = top_language.to("cpu").squeeze(-1).tolist()  # type: ignore
+    top_language_probs = top_language_probs.to("cpu").squeeze(-1).tolist()  # type: ignore
+    all_languages = all_languages.to("cpu").tolist()  # type: ignore
 
-    all_languages = [{lang: prob for lang, prob in zip(keys, langs)} for langs in all_languages]
+    all_languages = [{lang: prob for lang, prob in zip(keys, langs)} for langs in all_languages]  # type: ignore
 
-    return top_language, top_language_probs, all_languages
+    return top_language, top_language_probs, all_languages  # type: ignore
 
 
 class ModelConfig(BaseModel):
@@ -410,7 +410,7 @@ class WhisperModel:
 
         cache_dir = os.environ.get("HF_HOME", "./.models")
 
-        self.speech_model = WhisperForConditionalGeneration.from_pretrained(
+        self.speech_model = WhisperForConditionalGeneration.from_pretrained(  # type: ignore
             self.model_id,
             torch_dtype=self.torch_dtype,
             low_cpu_mem_usage=True,
@@ -490,7 +490,7 @@ class WhisperModel:
 
         try:
             # TODO: Do this conversion earlier
-            np_audio = [wave.numpy() for wave in audio]  # Ensure audio is in numpy format
+            np_audio = [wave.numpy() for wave in audio]  # type: ignore - Ensure audio is in numpy format
 
             inputs = self.processor(
                 np_audio,
@@ -614,7 +614,7 @@ class WhisperModel:
             *[
                 self.event_bus.publish(
                     DiarizationRequest(
-                        audio_waveform=audio, start_time=start_time, transcript=transcription.text, language="de", session_id=self.session_id
+                        audio_waveform=audio, start_time=start_time, transcript=transcription.text, language="en", session_id=self.session_id
                     )
                 )
                 for transcription, audio in zip(transcriptions, audio_batch)
@@ -658,7 +658,7 @@ class WhisperModel:
             try:
                 # Move model to CPU before deletion
                 if hasattr(self.speech_model, "to"):
-                    self.speech_model.to("cpu")
+                    self.speech_model.cpu()
 
                 # Delete model reference
                 del self.speech_model
@@ -671,8 +671,8 @@ class WhisperModel:
         if hasattr(self, "processor") and self.processor is not None:
             try:
                 # Clean up tokenizer if it exists
-                if hasattr(self.processor, "tokenizer") and self.processor.tokenizer is not None:
-                    del self.processor.tokenizer
+                if hasattr(self.processor, "tokenizer") and self.processor.tokenizer is not None:  # type: ignore
+                    del self.processor.tokenizer  # type: ignore
 
                 del self.processor
                 self.processor = None
@@ -710,7 +710,7 @@ class WhisperModel:
             try:
                 if hasattr(self, "speech_model") and self.speech_model is not None:
                     if hasattr(self.speech_model, "to"):
-                        self.speech_model.to("cpu")
+                        self.speech_model.cpu()
                     del self.speech_model
 
                 if hasattr(self, "processor") and self.processor is not None:

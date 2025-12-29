@@ -1,15 +1,16 @@
 import numpy as np
+import numpy.typing as npt
 import asyncio
 import sys
 import torch
 
 from pydantic import BaseModel, Field
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 import soundfile as sf
 import resampy
 
 import logging
-from whisper_web.events import EventBus, AudioChunkGenerated, AudioChunkNum
+from whisper_web.lib.backbone.events import EventBus, AudioChunkGenerated, AudioChunkNum
 from whisper_web.types import AudioChunk
 
 logger = logging.getLogger(__name__)
@@ -126,13 +127,13 @@ class InputStreamGenerator:
 
         self.event_bus = event_bus
 
-        self.global_ndarray: np.ndarray = np.array([])
+        self.global_ndarray: npt.NDArray[np.int16] = np.array([])
 
         self.phrase_delta_blocks: int = int((self.samplerate // self.blocksize) * generator_config.phrase_delta)
         self.silence_threshold = -1
 
-        self.vad_model, utils = torch.hub.load(repo_or_dir="snakers4/silero-vad", model="silero_vad")
-        (self.get_speech_timestamps, _, self.read_audio, _, _) = utils
+        (self.vad_model, utils) = torch.hub.load(repo_or_dir="snakers4/silero-vad", model="silero_vad")  # type: ignore
+        (self.get_speech_timestamps, _, self.read_audio, _, _) = utils  # type: ignore
 
         self.max_blocksize = generator_config.max_length_s * self.samplerate
         self.max_chunks = generator_config.max_length_s * self.samplerate / self.blocksize
@@ -155,7 +156,7 @@ class InputStreamGenerator:
             await self.set_silence_threshold()
             await self.process_with_heuristic()
 
-    async def generate(self) -> AsyncGenerator:
+    async def generate(self) -> AsyncGenerator[tuple[npt.NDArray[np.int16], None], Any]:
         """Asynchronously generates audio chunks for processing from a live input stream.
 
         This method acts as a unified audio generator, yielding blocks of audio data for downstream processing.
@@ -170,22 +171,22 @@ class InputStreamGenerator:
         :return: A :class:`tuple` containing the raw audio block and its status.
         :rtype: :class:`Iterator[Tuple[np.ndarray, CallbackFlags]]`
         """
-        q_in = asyncio.Queue()
+        q_in: asyncio.Queue[tuple[npt.NDArray[np.int16], None]] = asyncio.Queue()
         loop = asyncio.get_event_loop()
 
-        def callback(in_data, _, __, state):
+        def callback(in_data: npt.NDArray[np.int16], _, __: npt.NDArray[np.int16], state: None) -> None:
             loop.call_soon_threadsafe(q_in.put_nowait, (in_data.copy(), state))
 
         # Default stream args
-        stream_args = dict(  # type: ignore
-            samplerate=self.samplerate,
-            channels=1,
-            dtype="int16",  # type: ignore
-            blocksize=self.blocksize,
-            callback=callback,  # type: ignore
-        )
+        stream_args: dict[str, object] = {
+            "samplerate": self.samplerate,
+            "channels": 1,
+            "dtype": "int16",
+            "blocksize": self.blocksize,
+            "callback": callback,
+        }
 
-        stream = sd.InputStream(
+        stream: sd.InputStream = sd.InputStream(  # type: ignore
             **stream_args,
         )
         with stream:
@@ -247,7 +248,7 @@ class InputStreamGenerator:
         # Yield chunks of blocksize
         first_timestamp = True
         for timestamps in cut_timestamps:
-            chunk = data[timestamps["start"] : timestamps["end"]]  # type: ignore
+            chunk: npt.NDArray[np.int16] = data[timestamps["start"] : timestamps["end"]]  # type: ignore
 
             self.global_ndarray = chunk
             # TODO: Find out where this delay comes from
@@ -274,7 +275,7 @@ class InputStreamGenerator:
         previous_end = None
 
         for t in speech_timestamps:
-            if current_start is None:
+            if current_start is None or previous_end is None:
                 # Start a new cut segment
                 current_start = 0
                 previous_end = t["end"]
